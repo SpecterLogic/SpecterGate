@@ -36,6 +36,11 @@ apt-get update
 apt-get install -y python3 python3-venv python3-pip nginx certbot python3-certbot-nginx \
   curl unzip rsync openssl ca-certificates
 
+if ! python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)'; then
+  echo 'SpecterGate requires Python 3.11+. Use Ubuntu 24.04+ or Debian 12+, or configure a supported Python before installation.' >&2
+  exit 1
+fi
+
 # Node.js 22 is required by the Vite build.
 if ! command -v node >/dev/null 2>&1 || [[ "$(node -p 'process.versions.node.split(".")[0]')" -lt 20 ]]; then
   curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
