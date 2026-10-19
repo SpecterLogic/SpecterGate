@@ -31,6 +31,8 @@ const NAV_ITEMS = [
   { to: "/dns-tunnels", label: "تونل‌های DNS", icon: RadioTower },
   { to: "/nodes", label: "نودها", icon: Server },
   { to: "/settings", label: "تنظیمات", icon: Settings },
+  { to: "/integrations", label: "ربات و بکاپ", icon: Settings },
+  { to: "/routing", label: "مسیریابی و WARP", icon: RadioTower },
 ];
 
 const TITLES: Record<string, string> = {
@@ -43,6 +45,8 @@ const TITLES: Record<string, string> = {
   "/dns-tunnels": "تونل‌های DNS",
   "/nodes": "نودها",
   "/settings": "تنظیمات پنل",
+  "/integrations": "ربات و بکاپ",
+  "/routing": "مسیریابی و WARP",
 };
 
 export function Brand({ compact = false }: { compact?: boolean }) {
@@ -113,6 +117,7 @@ export default function Layout() {
         <nav className="nav">
           <span className="nav-caption">مدیریت</span>
           {NAV_ITEMS.filter(item => {
+            if (["/integrations", "/routing"].includes(item.to)) return !!admin?.is_owner;
             const permission: Record<string, string> = { "/": "dashboard.read", "/users": "users.read", "/admins": "admins.read", "/plans": "plans.read", "/subscriptions": "subscriptions.read", "/inbounds": "inbounds.read", "/nodes": "nodes.read", "/dns-tunnels": "dns.read", "/settings": "settings.read" };
             return admin?.permissions.includes(permission[item.to]);
           }).map((item) => {

@@ -280,6 +280,8 @@ def generate_config(
         },
     }
     client_count = sum(len(item.get("settings", {}).get("clients", [])) for item in generated)
+    from app.services.routing import apply_to_xray
+    apply_to_xray(db, config, node)
     return config, warnings, inbounds, client_count
 
 

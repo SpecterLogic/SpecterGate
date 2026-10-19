@@ -12,6 +12,8 @@ const SettingsPage = lazy(() => import("./pages/Settings"));
 const SubscriptionPage = lazy(() => import("./pages/Subscription"));
 const UsersPage = lazy(() => import("./pages/Users"));
 const Commerce = lazy(() => import("./pages/Commerce"));
+const Integrations = lazy(() => import("./pages/Integrations"));
+const RoutingPage = lazy(() => import("./pages/Routing"));
 
 function PermissionRoute({ permission, children }: { permission: string; children: React.ReactNode }) {
   const { admin } = useAuth();
@@ -67,6 +69,8 @@ export default function App() {
               <Route index element={<Dashboard />} />
               <Route path="/users" element={<UsersPage />} />
               <Route path="/admins" element={<PermissionRoute permission="admins.read"><Commerce key="admins" mode="admins" /></PermissionRoute>} />
+              <Route path="/integrations" element={<PermissionRoute permission="settings.manage"><Integrations /></PermissionRoute>} />
+              <Route path="/routing" element={<PermissionRoute permission="settings.manage"><RoutingPage /></PermissionRoute>} />
               <Route path="/plans" element={<PermissionRoute permission="plans.read"><Commerce key="plans" mode="plans" /></PermissionRoute>} />
               <Route path="/subscriptions" element={<PermissionRoute permission="subscriptions.read"><Commerce key="subscriptions" mode="subscriptions" /></PermissionRoute>} />
               <Route path="/inbounds" element={<InboundsPage />} />

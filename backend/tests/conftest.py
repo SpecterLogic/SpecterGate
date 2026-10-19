@@ -16,6 +16,7 @@ os.environ["SPECTERGATE_DEMO_DATA"] = "false"
 os.environ["SPECTERGATE_SECRET_KEY"] = "test-secret-key-that-is-long-enough"
 os.environ["SPECTERGATE_XRAY_BINARY"] = "definitely-not-installed-xray"
 os.environ["SPECTERGATE_PUBLIC_HOST"] = "panel.test"
+os.environ["SPECTERGATE_TRUSTED_HOSTS"] = "testserver,panel.test,localhost,127.0.0.1"
 
 os.environ["SPECTERGATE_SESSION_COOKIE_SECURE"] = "false"
 
@@ -23,7 +24,11 @@ from app.main import app  # noqa: E402
 
 
 @pytest.fixture()
-def client():
+def client(monkeypatch):
+    from app.services import telegram_bot
+    async def idle(stop):
+        await stop.wait()
+    monkeypatch.setattr(telegram_bot, "run", idle)
     with TestClient(app) as test_client:
         yield test_client
 

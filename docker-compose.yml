@@ -6,6 +6,7 @@ services:
       context: ./backend
       args:
         XRAY_VERSION: ${XRAY_VERSION:-26.3.27}
+        XRAY_SHA256: ${XRAY_SHA256:-}
     restart: unless-stopped
     environment:
       SPECTERGATE_SECRET_KEY: ${SPECTERGATE_SECRET_KEY:?Set SPECTERGATE_SECRET_KEY in .env}
@@ -14,6 +15,7 @@ services:
       SPECTERGATE_SESSION_COOKIE_SECURE: ${SPECTERGATE_SESSION_COOKIE_SECURE:-true}
       SPECTERGATE_PUBLIC_HOST: ${SPECTERGATE_PUBLIC_HOST:-localhost}
       SPECTERGATE_SUBSCRIPTION_BASE_URL: ${SPECTERGATE_SUBSCRIPTION_BASE_URL:-}
+      SPECTERGATE_CORS_ORIGINS: ${SPECTERGATE_SUBSCRIPTION_BASE_URL:-http://localhost}
       SPECTERGATE_DATABASE_URL: sqlite:////app/data/spectergate.db
       SPECTERGATE_XRAY_ENABLED: "true"
       SPECTERGATE_XRAY_BINARY: /usr/local/bin/xray
@@ -40,7 +42,7 @@ services:
       backend:
         condition: service_healthy
     ports:
-      - "80:80"
+      - "127.0.0.1:8080:80"
     security_opt:
       - no-new-privileges:true
 

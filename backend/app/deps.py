@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.models import Admin, AdminRole
+from app.models import Admin, AdminRole, AdminSession, as_utc, utcnow
 from app.security import decode_access_token, password_stamp
 import hmac
 from app.services.permissions import has_permission
@@ -42,6 +42,15 @@ def get_current_admin(
         raise credentials_error
     if payload.get("type") != "access" or not hmac.compare_digest(str(payload.get("pwd", "")), password_stamp(admin.password_hash)):
         raise credentials_error
+    session = db.get(AdminSession, payload.get("jti"))
+    if session is None or session.admin_id != admin.id or as_utc(session.expires_at) <= utcnow():
+        raise credentials_error
+    current, seen = admin, set()
+    while current is not None and current.id not in seen:
+        seen.add(current.id)
+        if not current.is_active:
+            raise credentials_error
+        current = current.parent
     return admin
 
 

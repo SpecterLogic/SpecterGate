@@ -416,6 +416,35 @@ class Setting(Base):
     )
 
 
+class ProtectedSetting(Base):
+    __tablename__ = "protected_settings"
+    key: Mapped[str] = mapped_column(String(80), primary_key=True)
+    ciphertext: Mapped[str] = mapped_column(Text)
+
+
+class AdminSession(Base):
+    __tablename__ = "admin_sessions"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    admin_id: Mapped[int] = mapped_column(ForeignKey("admins.id", ondelete="CASCADE"), index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class TelegramAdminBinding(Base):
+    __tablename__ = "telegram_admin_bindings"
+    telegram_user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    admin_id: Mapped[int] = mapped_column(ForeignKey("admins.id", ondelete="CASCADE"), index=True)
+    allow_create: Mapped[bool] = mapped_column(Boolean, default=False)
+    authorized_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class TelegramCommandReceipt(Base):
+    __tablename__ = "telegram_command_receipts"
+    update_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    admin_id: Mapped[int] = mapped_column(ForeignKey("admins.id", ondelete="CASCADE"))
+    username: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class AuditLog(Base):
     __tablename__ = "audit_logs"
 

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-help}" in
+  status) exec systemctl status spectergate ;;
+  logs) exec journalctl -u spectergate -f ;;
+  start|stop|restart) exec systemctl "$1" spectergate ;;
+  backup|decrypt-backup)
+    ACTION=$1; shift
+    cd /opt/spectergate/backend
+    exec .venv/bin/python -m app.backup_cli "$ACTION" "$@"
+    ;;
+  *) echo 'Usage: spectergate {status|logs|start|stop|restart|backup OUTPUT|decrypt-backup INPUT OUTPUT.tar.gz}' ;;
+esac

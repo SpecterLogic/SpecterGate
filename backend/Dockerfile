@@ -2,6 +2,7 @@ FROM python:3.12-slim
 
 ARG XRAY_VERSION=26.3.27
 ARG TARGETARCH=amd64
+ARG XRAY_SHA256
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -9,17 +10,19 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     XRAY_LOCATION_ASSET=/opt/xray
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl unzip passwd \
+    && apt-get install -y --no-install-recommends ca-certificates curl unzip passwd postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
 # Xray-core is bundled so the panel can generate, validate and run configs.
 RUN case "$TARGETARCH" in \
-        amd64) asset="Xray-linux-64.zip" ;; \
-        arm64) asset="Xray-linux-arm64-v8a.zip" ;; \
+        amd64) asset="Xray-linux-64.zip"; pinned_hash=23cd9af937744d97776ee35ecad4972cf4b2109d1e0fe6be9930467608f7c8ae ;; \
+        arm64) asset="Xray-linux-arm64-v8a.zip"; pinned_hash=4d30283ae614e3057f730f67cd088a42be6fdf91f8639d82cb69e48cde80413c ;; \
         *) echo "Unsupported architecture: $TARGETARCH" >&2; exit 1 ;; \
     esac \
+    && { [ "$XRAY_VERSION" = 26.3.27 ] || [ -n "$XRAY_SHA256" ]; } \
     && mkdir -p /opt/xray \
     && curl -fsSL "https://github.com/XTLS/Xray-core/releases/download/v${XRAY_VERSION}/${asset}" -o /tmp/xray.zip \
+    && printf '%s  /tmp/xray.zip\n' "${XRAY_SHA256:-$pinned_hash}" | sha256sum -c - \
     && unzip -q /tmp/xray.zip -d /opt/xray \
     && install -m 0755 /opt/xray/xray /usr/local/bin/xray \
     && rm -rf /tmp/xray.zip
@@ -43,4 +46,4 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4)"
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]

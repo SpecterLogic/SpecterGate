@@ -13,9 +13,29 @@ SpecterGate combines a React interface with a FastAPI backend and Xray-core. It 
 - Administrator hierarchy, scoped permissions, plans and quotas.
 - Local Xray management and a pull-based remote node agent.
 - DNSTT and NoizDNS profile generation, DNS multiplexing and an optional authenticated local SOCKS gateway with per-user accounting.
-- SQLite or PostgreSQL, Docker Compose, Nginx and systemd deployment.
+- Node-specific Direct/WARP/Block routing with encrypted WireGuard credentials.
+- Installation-specific Telegram bot: administrator user creation, subscription QR delivery and owner-only encrypted backups.
+- SQLite or PostgreSQL, a quick server installer, Docker Compose, Nginx and systemd deployment.
 
-This project is under active development. Server implementations for AmneziaWG, OpenVPN and other additional protocols are not part of the current release. WARP routing and the administration/backup bot are planned additions. Automated sales and payment processing are outside the project scope.
+This project is under active development. Server implementations for AmneziaWG, OpenVPN and other additional protocols are not part of the current release. Automated sales and payment processing are outside the project scope.
+
+## Quick server setup
+
+On a dedicated Debian/Ubuntu server (Python 3.11+), replace the domain and run:
+
+```bash
+curl -fsSLo /tmp/spectergate-install.sh https://raw.githubusercontent.com/SpecterLogic/SpecterGate/main/install.sh && sudo bash /tmp/spectergate-install.sh --domain panel.example.com
+```
+
+Add `--database postgresql` for a local PostgreSQL database, or `--version TAG_OR_COMMIT` to select an existing version. SQLite is the default. The installer generates owner credentials, configures HTTPS and installs the `spectergate` management command. Your domain must point to the server, with TCP ports 80/443 reachable.
+
+```bash
+spectergate status
+spectergate logs
+sudo spectergate restart
+```
+
+See [installation, bot, backups and routing](docs/INSTALL.md) for paths, recovery and configuration. Each installation uses its owner's own Telegram bot token. Network filtering resistance depends on the configured transport, endpoint and client; connectivity must be tested on the intended networks.
 
 ## Local development
 
@@ -54,7 +74,7 @@ npm ci
 npm run dev
 ```
 
-Open `http://127.0.0.1:5173`. The initial administrator username is `admin`; its password comes from the environment file. API documentation is available at `/api/docs`.
+Open `http://127.0.0.1:5173`. The initial administrator username is `admin`; its password comes from the environment file. API documentation is disabled by default; set `SPECTERGATE_EXPOSE_API_DOCS=true` to expose `/api/docs`.
 
 ## Docker
 
@@ -64,12 +84,13 @@ cp .env.docker.example .env
 docker compose up -d --build
 ```
 
-Put the panel behind HTTPS. For local HTTP-only testing, set `SPECTERGATE_SESSION_COOKIE_SECURE=false`. Publish every inbound TCP/UDP port that clients need. The optional PostgreSQL override is `docker-compose.postgres.yml`.
+The web container binds to `127.0.0.1:8080`; put it behind a host HTTPS reverse proxy. For local HTTP-only testing, set `SPECTERGATE_SESSION_COOKIE_SECURE=false`. Publish every inbound TCP/UDP port that clients need. The optional PostgreSQL override is `docker-compose.postgres.yml`.
 
 The backend manages local processes and listeners; run one API worker per instance. DNSTT server installation and DNS records are separate deployment steps described in the tunnel setup screen.
 
 ## Documentation
 
+- [Server installation, bot and encrypted backups](docs/INSTALL.md)
 - [Access policies, subscriptions and tunnels](docs/ACCESS_AND_SUBSCRIPTIONS.md)
 - [Architecture](ARCHITECTURE.md)
 - [Remote node agent](agent/README.md)

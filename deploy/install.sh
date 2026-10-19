@@ -3,29 +3,41 @@
 # Usage: sudo CERTBOT_EMAIL=you@example.com bash deploy/install.sh panel.example.com
 set -euo pipefail
 
-DOMAIN="${1:-}"
+DOMAIN=""
+DATABASE="sqlite"
+while (($#)); do
+  case "$1" in
+    --domain) DOMAIN="${2:?Missing domain}"; shift 2 ;;
+    --database) DATABASE="${2:?Missing database}"; shift 2 ;;
+    --help|-h) echo 'Usage: sudo bash deploy/install.sh --domain panel.example.com [--database sqlite|postgresql]'; exit 0 ;;
+    --*) echo "Unknown option: $1" >&2; exit 1 ;;
+    *) [[ -z "$DOMAIN" ]] || { echo 'Unexpected argument.' >&2; exit 1; }; DOMAIN="$1"; shift ;;
+  esac
+done
 CERTBOT_EMAIL="${CERTBOT_EMAIL:-}"
 APP_DIR="/opt/spectergate"
 WEB_ROOT="/var/www/spectergate"
 XRAY_VERSION="${XRAY_VERSION:-26.3.27}"
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-if [[ -z "$DOMAIN" ]]; then
+if [[ ! "$DOMAIN" =~ ^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?\.[a-zA-Z]{2,63}$ ]] || [[ "$DOMAIN" == *..* || ${#DOMAIN} -gt 253 ]]; then
   echo "Usage: sudo CERTBOT_EMAIL=you@example.com bash deploy/install.sh panel.example.com" >&2
   exit 1
 fi
+[[ "$DATABASE" == sqlite || "$DATABASE" == postgresql ]] || { echo 'Supported databases: sqlite, postgresql.' >&2; exit 1; }
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "This installer must run as root." >&2
   exit 1
 fi
 
 export DEBIAN_FRONTEND=noninteractive
+umask 022
 apt-get update
 apt-get install -y python3 python3-venv python3-pip nginx certbot python3-certbot-nginx \
   curl unzip rsync openssl ca-certificates
 
 # Node.js 22 is required by the Vite build.
-if ! command -v node >/dev/null 2>&1 || [[ "$(node -p 'process.versions.node.split(".")[0]')" -lt 18 ]]; then
+if ! command -v node >/dev/null 2>&1 || [[ "$(node -p 'process.versions.node.split(".")[0]')" -lt 20 ]]; then
   curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
   apt-get install -y nodejs
 fi
@@ -33,15 +45,22 @@ fi
 # Xray-core (panel validates and supervises this binary).
 if [[ ! -x /usr/local/bin/xray ]]; then
   case "$(uname -m)" in
-    x86_64) XRAY_ASSET="Xray-linux-64.zip" ;;
-    aarch64|arm64) XRAY_ASSET="Xray-linux-arm64-v8a.zip" ;;
+    x86_64) XRAY_ASSET="Xray-linux-64.zip"; PINNED_HASH=23cd9af937744d97776ee35ecad4972cf4b2109d1e0fe6be9930467608f7c8ae ;;
+    aarch64|arm64) XRAY_ASSET="Xray-linux-arm64-v8a.zip"; PINNED_HASH=4d30283ae614e3057f730f67cd088a42be6fdf91f8639d82cb69e48cde80413c ;;
     *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
   esac
+  if [[ "$XRAY_VERSION" != 26.3.27 && -z "${XRAY_SHA256:-}" ]]; then
+    echo 'A custom Xray version requires XRAY_SHA256.' >&2; exit 1
+  fi
   mkdir -p /usr/local/share/xray
-  curl -fsSL "https://github.com/XTLS/Xray-core/releases/download/v${XRAY_VERSION}/${XRAY_ASSET}" -o /tmp/xray.zip
-  unzip -q /tmp/xray.zip -d /usr/local/share/xray
+  XRAY_WORK=$(mktemp -d /tmp/spectergate-xray.XXXXXXXX)
+  trap 'rm -rf -- "$XRAY_WORK"' EXIT
+  curl --proto '=https' -fsSL --retry 3 "https://github.com/XTLS/Xray-core/releases/download/v${XRAY_VERSION}/${XRAY_ASSET}" -o "$XRAY_WORK/xray.zip"
+  printf '%s  %s\n' "${XRAY_SHA256:-$PINNED_HASH}" "$XRAY_WORK/xray.zip" | sha256sum -c -
+  unzip -q "$XRAY_WORK/xray.zip" -d /usr/local/share/xray
   install -m 0755 /usr/local/share/xray/xray /usr/local/bin/xray
-  rm -f /tmp/xray.zip
+  rm -rf -- "$XRAY_WORK"
+  trap - EXIT
 fi
 
 if ! id -u spectergate >/dev/null 2>&1; then
@@ -73,16 +92,36 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 
 if [[ ! -f "$APP_DIR/backend/.env" ]]; then
+  umask 077
+  DATABASE_URL='sqlite:///./data/spectergate.db'
+  if [[ "$DATABASE" == postgresql ]]; then
+    apt-get install -y postgresql postgresql-client
+    systemctl enable --now postgresql
+    DB_PASSWORD=$(openssl rand -hex 32)
+    # Refuse to alter an existing database or role during a fresh install.
+    if runuser -u postgres -- psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='spectergate'" | grep -q 1; then
+      echo 'PostgreSQL role spectergate already exists. Configure an existing installation explicitly.' >&2
+      exit 1
+    fi
+    runuser -u postgres -- psql -v ON_ERROR_STOP=1 <<SQL
+CREATE ROLE spectergate LOGIN PASSWORD '$DB_PASSWORD';
+CREATE DATABASE spectergate OWNER spectergate;
+SQL
+    DATABASE_URL="postgresql+psycopg://spectergate:$DB_PASSWORD@127.0.0.1:5432/spectergate"
+  fi
+  ADMIN_USERNAME="sg_$(openssl rand -hex 4)"
   ADMIN_PASSWORD="${ADMIN_PASSWORD:-$(openssl rand -base64 18 | tr -d '=+/' | cut -c1-20)}"
   SECRET_KEY="$(openssl rand -hex 32)"
   cat > "$APP_DIR/backend/.env" <<EOF
 SPECTERGATE_SECRET_KEY=$SECRET_KEY
-SPECTERGATE_ADMIN_USERNAME=admin
+SPECTERGATE_ADMIN_USERNAME=$ADMIN_USERNAME
 SPECTERGATE_ADMIN_PASSWORD=$ADMIN_PASSWORD
 SPECTERGATE_PUBLIC_HOST=$DOMAIN
 SPECTERGATE_SUBSCRIPTION_BASE_URL=https://$DOMAIN
 SPECTERGATE_CORS_ORIGINS=https://$DOMAIN
-SPECTERGATE_DATABASE_URL=sqlite:///./data/spectergate.db
+SPECTERGATE_DATABASE_URL=$DATABASE_URL
+SPECTERGATE_SESSION_COOKIE_SECURE=true
+SPECTERGATE_TRUSTED_HOSTS=$DOMAIN,127.0.0.1,localhost
 SPECTERGATE_XRAY_ENABLED=true
 SPECTERGATE_XRAY_BINARY=/usr/local/bin/xray
 SPECTERGATE_XRAY_CONFIG_PATH=./data/xray/config.json
@@ -91,13 +130,15 @@ SPECTERGATE_XRAY_API_ADDRESS=127.0.0.1:10085
 SPECTERGATE_DEMO_DATA=false
 EOF
   echo "──────────────────────────────────────────────"
-  echo "Admin username: admin"
+  echo "Admin username: $ADMIN_USERNAME"
   echo "Admin password: $ADMIN_PASSWORD"
   echo "Save this password; it is not shown again."
   echo "──────────────────────────────────────────────"
 fi
+umask 022
 chown spectergate:spectergate "$APP_DIR/backend/.env"
 chmod 600 "$APP_DIR/backend/.env"
+install -m 0755 "$APP_DIR/deploy/spectergate" /usr/local/bin/spectergate
 
 mkdir -p "$APP_DIR/backend/data"
 chown -R spectergate:spectergate "$APP_DIR/backend/data"
@@ -121,7 +162,7 @@ server {
     server_name $DOMAIN;
     root $WEB_ROOT;
     location /.well-known/acme-challenge/ { root /var/www/html; }
-    location / { try_files \$uri /index.html; }
+    location / { return 503; }
 }
 NGINX
 ln -sf /etc/nginx/sites-available/spectergate /etc/nginx/sites-enabled/spectergate
@@ -145,5 +186,5 @@ systemctl reload nginx
 
 echo "SpecterGate is installed."
 echo "Panel: https://$DOMAIN"
-echo "API docs: https://$DOMAIN/api/docs"
+echo "Management: spectergate status | logs | restart | backup | decrypt-backup"
 echo "Node agent and DNS router are installed but not enabled; configure their env/config first."

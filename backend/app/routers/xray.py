@@ -9,6 +9,7 @@ from app.models import Admin
 from app.schemas import KeyPairOut, OperationResult, XrayStatusOut
 from app.services import xray as xray_service
 from app.services.audit import write_audit
+from app.services.routing import redact_config
 
 
 router = APIRouter(prefix="/xray", tags=["xray"])
@@ -25,7 +26,7 @@ def status(_: Admin = Depends(read_access)):
 def preview_config(db: Session = Depends(get_db), _: Admin = Depends(read_access)):
     config, warnings, inbounds, client_count = xray_service.generate_config(db)
     return {
-        "config": config,
+        "config": redact_config(config),
         "warnings": warnings,
         "inbound_count": len(inbounds),
         "client_count": client_count,

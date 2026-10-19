@@ -1,0 +1,191 @@
+"""Node-specific Direct/WARP/Block routing with write-only WireGuard credentials."""
+import base64
+import ipaddress
+import re
+from typing import Literal
+
+from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
+from fastapi import HTTPException
+
+from app.models import Inbound, Node
+from app.services.settings import get_setting, set_setting
+from app.services.vault import get_secret, put_secret, has_secret
+
+
+def key32(value):
+    try:
+        if len(base64.b64decode(value, validate=True)) != 32:
+            raise ValueError()
+    except Exception:
+        raise ValueError("WireGuard key must be a base64-encoded 32-byte key.") from None
+    return value
+
+
+class RoutingRule(BaseModel):
+    outbound: Literal["direct", "warp", "blocked"]
+    domains: list[str] = Field(default_factory=list, max_length=200)
+    ips: list[str] = Field(default_factory=list, max_length=200)
+    inbound_ids: list[int] = Field(default_factory=list, max_length=200)
+
+    @field_validator("domains")
+    @classmethod
+    def validate_domains(cls, values):
+        if any(not value or len(value) > 255 or any(ord(c) < 32 for c in value) for value in values):
+            raise ValueError("Invalid routing domain.")
+        return values
+
+    @field_validator("ips")
+    @classmethod
+    def validate_ips(cls, values):
+        for value in values:
+            if value.startswith("geoip:") and re.fullmatch(r"geoip:[a-zA-Z0-9_!,-]+", value):
+                continue
+            ipaddress.ip_network(value, strict=False)
+        return values
+
+    @model_validator(mode="after")
+    def conditions(self):
+        if not (self.domains or self.ips or self.inbound_ids):
+            raise ValueError("Each rule needs a domain, IP or inbound condition.")
+        return self
+
+
+class RoutingConfig(BaseModel):
+    default_outbound: Literal["direct", "warp"] = "direct"
+    warp_enabled: bool = False
+    warp_endpoint: str = "engage.cloudflareclient.com:2408"
+    warp_public_key: str = ""
+    warp_addresses: list[str] = Field(default_factory=lambda: ["172.16.0.2/32"], min_length=1, max_length=4)
+    warp_reserved: list[int] = Field(default_factory=lambda: [0, 0, 0], min_length=3, max_length=3)
+    warp_mtu: int = Field(default=1280, ge=1280, le=1500)
+    rules: list[RoutingRule] = Field(default_factory=list, max_length=100)
+
+    @field_validator("warp_endpoint")
+    @classmethod
+    def endpoint(cls, value):
+        from urllib.parse import urlsplit
+        parsed = urlsplit("//" + value)
+        try:
+            valid = parsed.hostname and parsed.port and 1 <= parsed.port <= 65535
+        except ValueError:
+            valid = False
+        if not valid or parsed.username or parsed.password or parsed.path or parsed.query or parsed.fragment or len(value) > 255:
+            raise ValueError("Expected a WireGuard host:port endpoint.")
+        return value
+
+    @field_validator("warp_public_key")
+    @classmethod
+    def public_key(cls, value):
+        return key32(value) if value else value
+
+    @field_validator("warp_addresses")
+    @classmethod
+    def addresses(cls, values):
+        for value in values:
+            ipaddress.ip_interface(value)
+        return values
+
+    @field_validator("warp_reserved")
+    @classmethod
+    def reserved(cls, values):
+        if any(not 0 <= v <= 255 for v in values):
+            raise ValueError("Reserved values must be bytes.")
+        return values
+
+    @model_validator(mode="after")
+    def enabled_routes(self):
+        if self.warp_enabled and not self.warp_public_key:
+            raise ValueError("A peer public key is required for WARP.")
+        if not self.warp_enabled and (self.default_outbound == "warp" or any(r.outbound == "warp" for r in self.rules)):
+            raise ValueError("Enable WARP before selecting it as an outbound.")
+        return self
+
+
+class RoutingUpdate(RoutingConfig):
+    warp_private_key: SecretStr | None = None
+
+
+def profile_keys(node_id=None):
+    suffix = str(node_id) if node_id is not None else "local"
+    return "routing_" + suffix, "warp_private_" + suffix
+
+
+def verify_node(db, node_id):
+    node = db.get(Node, node_id) if node_id is not None else None
+    if node_id is not None and (node is None or node.is_local):
+        raise HTTPException(status_code=400, detail="نود راه دور معتبر انتخاب کنید؛ برای سرور محلی گزینه محلی را انتخاب کنید.")
+    return node
+
+
+def read_config(db, node_id=None):
+    key, secret = profile_keys(node_id)
+    stored = get_setting(db, key, None)
+    values = RoutingConfig.model_validate(stored or {}).model_dump()
+    return {**values, "private_key_configured": has_secret(db, secret), "node_id": node_id}
+
+
+def write_config(db, payload: RoutingUpdate, node_id=None):
+    verify_node(db, node_id)
+    key, secret = profile_keys(node_id)
+    values = payload.model_dump(exclude={"warp_private_key"})
+    if payload.warp_private_key is not None:
+        try:
+            private = key32(payload.warp_private_key.get_secret_value().strip())
+        except ValueError:
+            raise HTTPException(status_code=400, detail="کلید خصوصی WireGuard معتبر نیست.") from None
+        put_secret(db, secret, private)
+        db.flush()
+    if payload.warp_enabled and not has_secret(db, secret):
+        raise HTTPException(status_code=400, detail="کلید خصوصی WARP لازم است.")
+    for rule in payload.rules:
+        for inbound_id in set(rule.inbound_ids):
+            inbound = db.get(Inbound, inbound_id)
+            node = db.get(Node, inbound.node_id) if inbound and inbound.node_id else None
+            actual = node.id if node and not node.is_local else None
+            if inbound is None or actual != node_id:
+                raise HTTPException(status_code=400, detail="اینباند قانون باید متعلق به نود همین پروفایل باشد.")
+    set_setting(db, key, values)
+
+
+def apply_to_xray(db, config, node=None):
+    node_id = node.id if node is not None and not node.is_local else None
+    key, secret = profile_keys(node_id)
+    policy = RoutingConfig.model_validate(get_setting(db, key, None) or {})
+    if policy.warp_enabled:
+        private = get_secret(db, secret)
+        if private is None:
+            raise RuntimeError("WARP private key is unavailable; restore the integration key.")
+        warp = {"tag": "warp", "protocol": "wireguard", "settings": {"secretKey": private, "address": policy.warp_addresses, "mtu": policy.warp_mtu, "reserved": policy.warp_reserved, "noKernelTun": True, "peers": [{"publicKey": policy.warp_public_key, "endpoint": policy.warp_endpoint, "allowedIPs": ["0.0.0.0/0", "::/0"], "keepAlive": 25}]}}
+        config["outbounds"].append(warp)
+        if policy.default_outbound == "warp":
+            config["outbounds"].remove(warp)
+            config["outbounds"].insert(0, warp)
+    for item in policy.rules:
+        rule = {"type": "field", "outboundTag": item.outbound}
+        if item.domains:
+            rule["domain"] = item.domains
+        if item.ips:
+            rule["ip"] = item.ips
+        if item.inbound_ids:
+            tags = [i.tag for i in db.query(Inbound).filter(Inbound.id.in_(item.inbound_ids)).all()]
+            if not tags:
+                continue
+            rule["inboundTag"] = tags
+        config["routing"]["rules"].append(rule)
+
+
+def redact_config(config):
+    import copy
+    result = copy.deepcopy(config)
+    def walk(item):
+        if isinstance(item, dict):
+            for key, value in item.items():
+                if key in {"secretKey", "privateKey", "password"}:
+                    item[key] = "[redacted]"
+                else:
+                    walk(value)
+        elif isinstance(item, list):
+            for child in item:
+                walk(child)
+    walk(result)
+    return result

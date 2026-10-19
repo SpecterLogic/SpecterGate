@@ -49,7 +49,7 @@ def access_options(db: Session = Depends(get_db), admin: Admin = Depends(get_cur
         raise HTTPException(status_code=403, detail="مجوز مشاهده منابع را ندارید.")
     from app.models import Inbound, DnsTunnel
     return {
-        "inbounds": [{"id": item.id, "name": item.remark, "tag": item.tag, "protocol": item.protocol, "is_active": item.is_active} for item in db.query(Inbound).order_by(Inbound.id).all() if admin_inbound_allowed(admin, item.id)],
+        "inbounds": [{"id": item.id, "name": item.remark, "tag": item.tag, "node_id": item.node_id, "protocol": item.protocol, "is_active": item.is_active} for item in db.query(Inbound).order_by(Inbound.id).all() if admin_inbound_allowed(admin, item.id)],
         "dns_tunnels": [{"id": item.id, "name": item.name, "domain": item.domain, "is_active": item.is_active} for item in db.query(DnsTunnel).order_by(DnsTunnel.id).all()],
     }
 

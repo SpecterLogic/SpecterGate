@@ -19,19 +19,22 @@ class Settings(BaseSettings):
         env_prefix="SPECTERGATE_",
         case_sensitive=False,
         extra="ignore",
+        hide_input_in_errors=True,
     )
 
     app_name: str = "SpecterGate"
     version: str = "0.1.0"
     debug: bool = False
+    expose_api_docs: bool = False
     api_prefix: str = "/api"
 
     secret_key: str = ""
-    access_token_expire_minutes: int = 720
+    access_token_expire_minutes: int = 60
     algorithm: str = "HS256"
 
     database_url: str = f"sqlite:///{DEFAULT_DB.as_posix()}"
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+    trusted_hosts: str = "localhost,127.0.0.1,[::1]"
 
     admin_username: str = "admin"
     admin_password: str = ""

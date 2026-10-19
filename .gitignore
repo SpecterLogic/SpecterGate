@@ -24,6 +24,8 @@ frontend/dist/
 *.bak
 *.zip
 *.tar.gz
+*.sgbackup
+*.dump
 .env.*
 !.env.example
 !.env.docker.example

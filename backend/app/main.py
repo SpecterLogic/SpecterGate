@@ -9,6 +9,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.exceptions import RequestValidationError
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+from urllib.parse import urlsplit
 
 from app.config import settings
 from app.database import Base, SessionLocal, engine
@@ -26,10 +29,14 @@ from app.routers import (
     subscriptions_admin,
     users,
     xray,
+    integrations,
+    routing,
 )
 from app.seed import seed_database
 from app.services import maintenance, xray as xray_service
 from app.services.tunnel_gateway import TunnelGateway
+from app.services import telegram_bot
+from app.services.http_security import RequestBodyLimitMiddleware
 
 
 @asynccontextmanager
@@ -41,12 +48,14 @@ async def lifespan(app: FastAPI):
     worker = asyncio.create_task(maintenance.run(stop))
     app.state.tunnel_gateway = TunnelGateway()
     gateway_worker = asyncio.create_task(app.state.tunnel_gateway.run(stop))
+    telegram_worker = asyncio.create_task(telegram_bot.run(stop))
     try:
         yield
     finally:
         stop.set()
         await worker
         await gateway_worker
+        await telegram_worker
         await asyncio.to_thread(xray_service.stop_process)
 
 
@@ -55,9 +64,9 @@ def create_app() -> FastAPI:
         title="SpecterGate Panel API",
         description="پنل یکپارچه مدیریت کاربران، نودها و اینباندهای Xray",
         version=settings.version,
-        docs_url="/api/docs",
-        redoc_url="/api/redoc",
-        openapi_url="/api/openapi.json",
+        docs_url="/api/docs" if settings.expose_api_docs else None,
+        redoc_url=None,
+        openapi_url="/api/openapi.json" if settings.expose_api_docs else None,
         lifespan=lifespan,
     )
 
@@ -69,6 +78,16 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
         expose_headers=["subscription-userinfo", "profile-update-interval", "profile-title"],
     )
+    allowed_hosts = [value.strip() for value in settings.trusted_hosts.split(",") if value.strip()]
+    allowed_hosts.append(settings.public_host)
+    if settings.subscription_base_url:
+        allowed_hosts.append(urlsplit(settings.subscription_base_url).hostname or "localhost")
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(set(allowed_hosts)))
+    app.add_middleware(RequestBodyLimitMiddleware)
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error(request, exc):
+        return JSONResponse({"detail": [{"loc": error["loc"], "msg": error["msg"], "type": error["type"]} for error in exc.errors()]}, status_code=422)
 
     @app.middleware("http")
     async def browser_origin_guard(request, call_next):
@@ -83,6 +102,15 @@ def create_app() -> FastAPI:
         response = await call_next(request)
         if request.url.path.startswith(("/sub/", "/api/")):
             response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'none'; form-action 'self'"
+        if settings.expose_api_docs and request.url.path in {"/api/docs", "/docs/oauth2-redirect"}:
+            response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; img-src 'self' data: https://fastapi.tiangolo.com; frame-ancestors 'none'; object-src 'none'; base-uri 'none'"
+        if request.url.scheme == "https":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000"
         return response
 
     for router in (
@@ -98,6 +126,8 @@ def create_app() -> FastAPI:
         xray.router,
         settings_router.router,
         agent.router,
+        integrations.router,
+        routing.router,
     ):
         app.include_router(router, prefix=settings.api_prefix)
 
@@ -118,6 +148,8 @@ def create_app() -> FastAPI:
 
         @app.get("/{full_path:path}", include_in_schema=False)
         def spa(full_path: str):
+            if full_path == 'api' or full_path.startswith(('api/', 'sub/')):
+                return JSONResponse({'detail': 'Not found'}, status_code=404)
             target = (dist / full_path).resolve()
             if full_path and target.is_relative_to(dist.resolve()) and target.is_file():
                 return FileResponse(target)

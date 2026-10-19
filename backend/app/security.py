@@ -62,10 +62,13 @@ def create_access_token(subject: str, role: str, password_hash: str) -> tuple[st
         "exp": expire,
         "type": "access",
         "pwd": password_stamp(password_hash),
+        "jti": secrets.token_urlsafe(32),
+        "iss": "SpecterGate",
+        "aud": "SpecterGate.admin",
     }
     token = jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
     return token, int(expires_delta.total_seconds())
 
 
 def decode_access_token(token: str) -> dict:
-    return jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+    return jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm], issuer="SpecterGate", audience="SpecterGate.admin", options={"require": ["exp", "iat", "sub", "type", "pwd", "jti"]})

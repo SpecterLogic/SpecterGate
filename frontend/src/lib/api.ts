@@ -22,7 +22,7 @@ function detailMessage(detail: unknown): string {
   return "درخواست با خطا مواجه شد.";
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function request<T>(path: string, options: RequestInit = {}, responseType?: "blob"): Promise<T> {
   const headers = new Headers(options.headers);
   if (!(options.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
@@ -43,10 +43,12 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     throw new ApiError(detailMessage(detail), response.status);
   }
   if (response.status === 204) return undefined as T;
+  if (responseType === "blob") return (await response.blob()) as T;
   return (await response.json()) as T;
 }
 
 export const api = {
+  download: (path: string, body?: unknown) => request<Blob>(path, { method: "POST", body: JSON.stringify(body ?? {}) }, "blob"),
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) }),

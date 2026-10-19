@@ -1,4 +1,5 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+import jwt
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
@@ -7,9 +8,9 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.config import settings
 from app.deps import get_client_ip, get_current_admin
-from app.models import Admin
+from app.models import Admin, AdminSession
 from app.schemas import AdminOut, ChangePasswordRequest, LoginRequest, TokenResponse
-from app.security import create_access_token, hash_password, verify_password
+from app.security import create_access_token, hash_password, verify_password, decode_access_token
 from app.services.admin_view import build_admin_out
 from app.services.audit import write_audit
 from app.services.login_guard import check_login, failed_login, successful_login
@@ -34,6 +35,9 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
     db.commit()
     db.refresh(admin)
     token, expires_in = create_access_token(admin.username, admin.role.value, admin.password_hash)
+    claims = decode_access_token(token)
+    db.query(AdminSession).filter(AdminSession.expires_at < datetime.now(timezone.utc)).delete()
+    db.add(AdminSession(id=claims["jti"], admin_id=admin.id, expires_at=datetime.now(timezone.utc) + timedelta(seconds=expires_in)))
     write_audit(
         db,
         admin,
@@ -62,7 +66,18 @@ def browser_session(payload: LoginRequest, request: Request, response: Response,
 
 
 @router.post("/logout")
-def logout(response: Response):
+def logout(response: Response, request: Request, db: Session = Depends(get_db)):
+    scheme, _, bearer = request.headers.get("authorization", "").partition(" ")
+    token = bearer if scheme.lower() == "bearer" else request.cookies.get("spectergate_session")
+    if token:
+        try:
+            claims = decode_access_token(token)
+            session = db.get(AdminSession, claims["jti"])
+            if session:
+                db.delete(session)
+                db.commit()
+        except jwt.PyJWTError:
+            pass
     response.delete_cookie("spectergate_session", path="/api", secure=settings.session_cookie_secure, httponly=True, samesite="strict")
     return {"ok": True}
 
@@ -92,6 +107,7 @@ def change_password(
     if not verify_password(payload.current_password, admin.password_hash):
         raise HTTPException(status_code=400, detail="رمز عبور فعلی نادرست است.")
     admin.password_hash = hash_password(payload.new_password)
+    db.query(AdminSession).filter(AdminSession.admin_id == admin.id).delete()
     db.commit()
     write_audit(
         db,
