@@ -9,9 +9,12 @@ from urllib.parse import quote, urlencode
 from app.models import Inbound, Node, VPNUser
 from app.services.settings import get_setting
 from app.services.permissions import inbound_allowed
+from app.services.inbound_options import client_flow, options, subscription_inbounds, client_sni, client_short_id
 
 
 def _host_for(inbound: Inbound, node: Node | None, public_host: str) -> str:
+    if options(inbound).share_host:
+        return options(inbound).share_host
     if node and not node.is_local and node.address:
         return node.address
     return public_host or (node.address if node else "127.0.0.1")
@@ -27,9 +30,14 @@ def _query(**kwargs: str | None) -> str:
 
 
 def build_link(inbound: Inbound, node: Node | None, user: VPNUser, public_host: str) -> str | None:
+    advanced = options(inbound)
+    if inbound.network == 'kcp' or advanced.tcp_http_obfuscation:
+        return None  # Use Xray JSON for transports that cannot be represented faithfully here.
     host = _host_for(inbound, node, public_host)
     if ":" in host and not host.startswith("["):
         host = f"[{host}]"
+    sni = advanced.reality.serverNames[0] if inbound.security == "reality" and advanced.reality.serverNames else inbound.sni
+    short_id = advanced.reality.shortIds[0] if advanced.reality.shortIds else inbound.reality_short_id
     port = inbound.port
     remark = quote(f"{inbound.remark} | {user.username}")
     network = inbound.network if inbound.network != "tcp" else None
@@ -38,18 +46,18 @@ def build_link(inbound: Inbound, node: Node | None, user: VPNUser, public_host: 
         params = _query(
             encryption="none",
             security=inbound.security if inbound.security != "none" else None,
-            sni=inbound.sni if inbound.security in {"tls", "reality"} else None,
+            sni=sni if inbound.security in {"tls", "reality"} else None,
             fp=inbound.fingerprint if inbound.security in {"tls", "reality"} else None,
             pbk=inbound.reality_public_key if inbound.security == "reality" else None,
-            sid=inbound.reality_short_id if inbound.security == "reality" else None,
-            spx="/" if inbound.security == "reality" else None,
+            sid=short_id if inbound.security == "reality" else None,
+            spx=advanced.reality.spiderX if inbound.security == "reality" else None,
             type=network,
             host=inbound.host if inbound.network in {"ws", "httpupgrade", "xhttp"} else None,
             path=inbound.path if inbound.network in {"ws", "httpupgrade", "xhttp"} else None,
-            mode="auto" if inbound.network == "xhttp" else None,
+            mode=advanced.xhttp.mode if inbound.network == "xhttp" else None,
             serviceName=inbound.service_name if inbound.network == "grpc" else None,
             alpn=inbound.alpn if inbound.security == "tls" else None,
-            flow=inbound.flow if inbound.network == "tcp" and inbound.security != "none" else None,
+            flow=client_flow(inbound) if inbound.network == "tcp" and inbound.security != "none" else None,
         )
         return f"vless://{user.uuid}@{host}:{port}?{params}#{remark}"
 
@@ -78,7 +86,7 @@ def build_link(inbound: Inbound, node: Node | None, user: VPNUser, public_host: 
     if inbound.protocol == "trojan":
         params = _query(
             security=inbound.security if inbound.security != "none" else None,
-            sni=inbound.sni if inbound.security in {"tls", "reality"} else None,
+            sni=sni if inbound.security in {"tls", "reality"} else None,
             type=network,
             host=inbound.host if inbound.network in {"ws", "httpupgrade", "xhttp"} else None,
             path=inbound.path if inbound.network in {"ws", "httpupgrade", "xhttp"} else None,
@@ -89,6 +97,8 @@ def build_link(inbound: Inbound, node: Node | None, user: VPNUser, public_host: 
         return f"trojan://{quote(user.password)}@{host}:{port}?{params}#{remark}"
 
     if inbound.protocol == "shadowsocks":
+        if inbound.network != 'tcp' or inbound.security != 'none':
+            return None
         userinfo = _b64(f"chacha20-ietf-poly1305:{user.password}")
         return f"ss://{userinfo}@{host}:{port}#{remark}"
 
@@ -99,7 +109,7 @@ def subscription_links(
     user: VPNUser, inbounds: list[Inbound], nodes: dict[int, Node], public_host: str
 ) -> list[dict]:
     links: list[dict] = []
-    for inbound in inbounds:
+    for inbound in subscription_inbounds(inbounds):
         if user.status != "active" or not inbound_allowed(user, inbound.id):
             continue
         node = nodes.get(inbound.node_id) if inbound.node_id else None
@@ -170,10 +180,12 @@ def build_clash_config(user: VPNUser, links: list[dict], inbounds: list[Inbound]
         return ""
 
     proxies: list[dict] = []
-    for inbound in inbounds:
+    for inbound in subscription_inbounds(inbounds):
+        if inbound.protocol == "shadowsocks" and (inbound.network != "tcp" or inbound.security != "none"):
+            continue
         if user.status != "active" or not inbound_allowed(user, inbound.id):
             continue
-        if inbound.network == "xhttp":
+        if inbound.network in {"xhttp", "kcp"} or options(inbound).tcp_http_obfuscation:
             continue  # XHTTP profiles are delivered through Xray JSON or share links.
         host = _host_for(inbound, nodes.get(inbound.node_id) if inbound.node_id else None, public_host)
         name = f"{inbound.remark} | {user.username}"
@@ -187,20 +199,20 @@ def build_clash_config(user: VPNUser, links: list[dict], inbounds: list[Inbound]
                 "udp": True,
                 "network": inbound.network,
                 "tls": inbound.security in {"tls", "reality"},
-                "servername": inbound.sni,
+                "servername": client_sni(inbound),
                 "client-fingerprint": inbound.fingerprint or "chrome",
             }
             if inbound.security == "reality":
                 entry["reality-opts"] = {
                     "public-key": inbound.reality_public_key,
-                    "short-id": inbound.reality_short_id or "",
+                    "short-id": client_short_id(inbound) or "",
                 }
-            if inbound.flow and inbound.network == "tcp":
-                entry["flow"] = inbound.flow
+            if client_flow(inbound) and inbound.network == "tcp":
+                entry["flow"] = client_flow(inbound)
             if inbound.network == "ws":
                 entry["ws-opts"] = {
                     "path": inbound.path or "/",
-                    "headers": {"Host": inbound.host or inbound.sni or host},
+                    "headers": {"Host": inbound.host or client_sni(inbound) or host},
                 }
             elif inbound.network == "grpc":
                 entry["grpc-opts"] = {"grpc-service-name": inbound.service_name or ""}
@@ -219,7 +231,7 @@ def build_clash_config(user: VPNUser, links: list[dict], inbounds: list[Inbound]
                 "udp": True,
                 "network": inbound.network,
                 "tls": inbound.security == "tls",
-                "servername": inbound.sni,
+                "servername": client_sni(inbound),
             }
             if inbound.network == "ws":
                 entry["ws-opts"] = {"path": inbound.path or "/", "headers": {"Host": inbound.host or host}}
@@ -234,7 +246,7 @@ def build_clash_config(user: VPNUser, links: list[dict], inbounds: list[Inbound]
                 "port": inbound.port,
                 "password": user.password,
                 "udp": True,
-                "sni": inbound.sni,
+                "sni": client_sni(inbound),
                 "network": inbound.network,
             }
             proxies.append({key: value for key, value in entry.items() if value is not None})

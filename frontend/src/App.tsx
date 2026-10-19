@@ -2,6 +2,9 @@ import { lazy, Suspense, useEffect } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import Layout from "./components/Layout";
 import { useAuth } from "./lib/auth";
+import { useQuery } from '@tanstack/react-query';
+import { api } from './lib/api';
+import { configureDatePreferences } from './lib/format';
 
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const DnsTunnelsPage = lazy(() => import("./pages/DnsTunnels"));
@@ -57,6 +60,9 @@ function ProtectedRoute() {
 }
 
 export default function App() {
+  const { admin } = useAuth();
+  const preferences = useQuery({ queryKey: ['display-preferences'], queryFn: () => api.get<{time_zone: string; calendar: string}>('/api/display-preferences'), enabled: !!admin });
+  configureDatePreferences(preferences.data?.time_zone || 'Asia/Tehran', preferences.data?.calendar || 'persian');
   return (
     <>
       <ScrollToTop />

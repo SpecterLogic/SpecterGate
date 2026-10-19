@@ -96,10 +96,11 @@ export interface Node {
 }
 
 export type Protocol = "vless" | "vmess" | "trojan" | "shadowsocks";
-export type Network = "tcp" | "ws" | "grpc" | "httpupgrade" | "xhttp";
+export type Network = "tcp" | "ws" | "grpc" | "httpupgrade" | "xhttp" | "kcp";
 export type Security = "reality" | "tls" | "none";
 
 export interface Inbound {
+  extra_json: string | null;
   id: number;
   node_id: number | null;
   node_name: string | null;
@@ -156,6 +157,8 @@ export interface DashboardOverview {
 }
 
 export interface PanelSettings {
+  time_zone: string;
+  calendar: 'persian' | 'gregory';
   panel_title: string;
   panel_description: string;
   subscription_base_url: string;

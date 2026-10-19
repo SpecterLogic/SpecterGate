@@ -26,6 +26,7 @@ def test_vless_xhttp_tls_contract(tmp_path):
     key_path.write_bytes(key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
     user = VPNUser(id=1, username='tls', uuid='e3bc3070-d54e-433d-9767-066e8edfaad5', password='test-tls-client-secret', sub_token='test-sub', is_active=True)
     inbound = Inbound(id=1, is_active=True, tag='tls', remark='TLS', listen='127.0.0.1', port=19999, protocol='vless', network='xhttp', security='tls', path='/xhttp', sni='example.com', tls_cert_path=str(cert_path), tls_key_path=str(key_path))
+    inbound.extra_json = json.dumps({'tls': {'minVersion': '1.3', 'maxVersion': '1.3', 'curvePreferences': ['X25519'], 'enableSessionResumption': True, 'rejectUnknownSni': True}})
     built, _ = _build_inbound(inbound, [user])
     for label, config in [('server', {'inbounds': [built], 'outbounds': [{'protocol': 'freedom'}]}), ('client', export_profiles([user], [inbound], {}, 'example.com', 'json')[0])]:
         path = tmp_path / f'tls-{label}.json'

@@ -17,6 +17,7 @@ import {
   Trash2,
   Wand2,
 } from "lucide-react";
+import InboundAdvanced, { serializeAdvanced } from "../components/InboundAdvanced";
 import { api } from "../lib/api";
 import { useToast } from "../lib/toast";
 import type { Inbound, Network as NetworkType, Node, Protocol, Security, XrayApplyResult, XrayStatus } from "../lib/types";
@@ -37,6 +38,7 @@ import {
 } from "../components/UI";
 
 interface InboundForm {
+  advanced: string;
   tag: string;
   remark: string;
   protocol: Protocol;
@@ -62,6 +64,7 @@ interface InboundForm {
 }
 
 const EMPTY_FORM: InboundForm = {
+  advanced: "{}",
   tag: "",
   remark: "",
   protocol: "vless",
@@ -88,6 +91,7 @@ const EMPTY_FORM: InboundForm = {
 
 function inboundToForm(inbound: Inbound): InboundForm {
   return {
+    advanced: JSON.stringify({ ...JSON.parse(inbound.extra_json || "{}"), sockopt_enabled: !!JSON.parse(inbound.extra_json || "{}").sockopt }),
     tag: inbound.tag,
     remark: inbound.remark,
     protocol: inbound.protocol,
@@ -115,6 +119,7 @@ function inboundToForm(inbound: Inbound): InboundForm {
 
 function toPayload(form: InboundForm): Record<string, unknown> {
   return {
+    extra_json: serializeAdvanced(form.advanced),
     tag: form.tag.trim(),
     remark: form.remark.trim(),
     protocol: form.protocol,
@@ -267,7 +272,7 @@ export default function InboundsPage() {
       setFormError("پورت باید بین ۱ تا ۶۵۵۳۵ باشد.");
       return;
     }
-    saveMutation.mutate(toPayload(form));
+    try { saveMutation.mutate(toPayload(form)); } catch { setFormError("Invalid advanced inbound settings."); }
   }
 
   function changeProtocol(protocol: Protocol) {
@@ -275,7 +280,7 @@ export default function InboundsPage() {
       ...current,
       protocol,
       security: protocol !== "vless" && current.security === "reality" ? "none" : current.security,
-      flow: protocol === "vless" && current.network === "tcp" ? "xtls-rprx-vision" : "",
+      flow: protocol === "vless" && current.network === "tcp" && current.security !== 'none' ? "xtls-rprx-vision" : "",
     }));
   }
 
@@ -283,6 +288,8 @@ export default function InboundsPage() {
     setForm((current) => ({
       ...current,
       network,
+      security: current.security === 'reality' && !['tcp', 'grpc', 'xhttp'].includes(network) ? 'none' : current.security,
+      advanced: JSON.stringify({ ...JSON.parse(current.advanced), ...(!['tcp', 'ws', 'httpupgrade'].includes(network) ? { proxy_protocol: false } : {}), ...(network !== 'tcp' ? { tcp_http_obfuscation: false } : {}) }),
       flow: current.protocol === "vless" && network === "tcp" && current.security === "reality" ? "xtls-rprx-vision" : "",
     }));
   }
@@ -517,7 +524,8 @@ export default function InboundsPage() {
 
           <Field label="شبکه">
             <Select value={form.network} onChange={(event) => changeNetwork(event.target.value as NetworkType)}>
-              <option value="tcp">TCP</option>
+              <option value="tcp">RAW / TCP</option>
+              <option value="kcp">mKCP (UDP)</option>
               <option value="ws">WebSocket</option>
               <option value="grpc">gRPC</option>
               <option value="httpupgrade">HTTP Upgrade</option>
@@ -539,7 +547,7 @@ export default function InboundsPage() {
                 });
               }}
             >
-              <option value="reality" disabled={form.protocol !== "vless"}>
+              <option value="reality" disabled={form.protocol !== "vless" || !['tcp', 'grpc', 'xhttp'].includes(form.network)}>
                 Reality
               </option>
               <option value="tls">TLS</option>
@@ -601,6 +609,7 @@ export default function InboundsPage() {
                   </Field>
                   <Field label="Private Key">
                     <Input
+                      type="password" autoComplete="new-password"
                       value={form.realityPrivateKey}
                       onChange={(event) => setForm({ ...form, realityPrivateKey: event.target.value })}
                       dir="ltr"
@@ -687,6 +696,7 @@ export default function InboundsPage() {
             />
           </div>
 
+          <InboundAdvanced value={form.advanced} onChange={advanced => setForm({ ...form, advanced })} network={form.network} security={form.security} />
           {formError && <div className="form-error field-span-2">{formError}</div>}
         </form>
       </Modal>

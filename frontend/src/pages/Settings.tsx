@@ -35,6 +35,7 @@ import {
   SectionHeader,
   Skeleton,
   Textarea,
+  Select,
 } from "../components/UI";
 
 type TabKey = "general" | "subscription" | "xray" | "security" | "audit";
@@ -116,6 +117,7 @@ export default function SettingsPage() {
       setForm(data);
       toast.success("تنظیمات ذخیره شد.");
       queryClient.invalidateQueries({ queryKey: ["panel-settings"] });
+      queryClient.invalidateQueries({ queryKey: ["display-preferences"] });
     },
     onError: (error: Error) => toast.error(error.message),
   });
@@ -178,6 +180,8 @@ export default function SettingsPage() {
       support_url: form.support_url,
       announcement: form.announcement,
       registration_enabled: form.registration_enabled,
+      time_zone: form.time_zone,
+      calendar: form.calendar,
     });
   }
 
@@ -296,6 +300,8 @@ export default function SettingsPage() {
                       placeholder="مثلاً: به‌روزرسانی برنامه در تاریخ..."
                     />
                   </Field>
+                  <Field label="منطقه زمانی نمایش تاریخ" hint="شناسه IANA؛ مانند Asia/Tehran یا UTC. تاریخ‌ها در دیتابیس به صورت UTC نگهداری می‌شوند."><Input dir="ltr" value={form.time_zone} onChange={e => setForm({ ...form, time_zone: e.target.value })} /></Field>
+                  <Field label="تقویم نمایش تاریخ"><Select value={form.calendar} onChange={e => setForm({ ...form, calendar: e.target.value as 'persian' | 'gregory' })}><option value="persian">شمسی</option><option value="gregory">میلادی</option></Select></Field>
                   <div className="settings-info-note">
                     <Sparkles size={17} />
                     <span>

@@ -7,7 +7,8 @@ SpecterGate combines a React interface with a FastAPI backend and Xray-core. It 
 ## Features
 
 - VLESS, VMess, Trojan and Shadowsocks inbounds.
-- TCP, WebSocket, gRPC, HTTPUpgrade and XHTTP transports; TLS and VLESS Reality.
+- RAW/TCP, WebSocket, gRPC, HTTPUpgrade, XHTTP and mKCP transports; TLS and VLESS Reality.
+- Validated advanced TLS/Reality, Sniffing, Sockopt and stream options, subscription ordering and host overrides.
 - Subscription links, QR codes, Base64, raw links, Xray JSON, Clash Meta and Sing-box exports. Export compatibility depends on the selected protocol and transport.
 - Individual and group access policies for inbounds and DNS tunnels.
 - Administrator hierarchy, scoped permissions, plans and quotas.
@@ -91,6 +92,7 @@ The backend manages local processes and listeners; run one API worker per instan
 ## Documentation
 
 - [Server installation, bot and encrypted backups](docs/INSTALL.md)
+- [Feature coverage and remaining compatibility work](docs/FEATURE_PARITY.md)
 - [Access policies, subscriptions and tunnels](docs/ACCESS_AND_SUBSCRIPTIONS.md)
 - [Architecture](ARCHITECTURE.md)
 - [Remote node agent](agent/README.md)

@@ -22,10 +22,24 @@ def key32(value):
 
 
 class RoutingRule(BaseModel):
-    outbound: Literal["direct", "warp", "blocked"]
+    outbound: Literal["direct", "warp", "blocked", "ipv4"]
     domains: list[str] = Field(default_factory=list, max_length=200)
     ips: list[str] = Field(default_factory=list, max_length=200)
     inbound_ids: list[int] = Field(default_factory=list, max_length=200)
+    protocols: list[Literal['http', 'tls', 'quic', 'bittorrent']] = Field(default_factory=list, max_length=4)
+    network: Literal['tcp', 'udp', 'tcp,udp'] | None = None
+    port: str | None = Field(default=None, max_length=200)
+
+    @field_validator('port')
+    @classmethod
+    def ports(cls, value):
+        if value is None:
+            return value
+        for item in value.split(','):
+            bounds = item.strip().split('-')
+            if len(bounds) not in {1, 2} or any(not b.isdigit() or not 1 <= int(b) <= 65535 for b in bounds) or int(bounds[0]) > int(bounds[-1]):
+                raise ValueError('Expected a port or range, e.g. 443 or 80,8000-9000.')
+        return value
 
     @field_validator("domains")
     @classmethod
@@ -45,13 +59,22 @@ class RoutingRule(BaseModel):
 
     @model_validator(mode="after")
     def conditions(self):
-        if not (self.domains or self.ips or self.inbound_ids):
+        if not (self.domains or self.ips or self.inbound_ids or self.protocols or self.network or self.port):
             raise ValueError("Each rule needs a domain, IP or inbound condition.")
         return self
 
 
 class RoutingConfig(BaseModel):
-    default_outbound: Literal["direct", "warp"] = "direct"
+    default_outbound: Literal["direct", "warp", "blocked", "ipv4"] = "direct"
+    domain_strategy: Literal['AsIs', 'IPIfNonMatch', 'IPOnDemand'] = 'AsIs'
+    block_bittorrent: bool = False
+    block_ips: list[str] = Field(default_factory=list, max_length=200)
+    block_domains: list[str] = Field(default_factory=list, max_length=200)
+    direct_ips: list[str] = Field(default_factory=list, max_length=200)
+    direct_domains: list[str] = Field(default_factory=list, max_length=200)
+    ipv4_domains: list[str] = Field(default_factory=list, max_length=200)
+    _ip_lists = field_validator('block_ips', 'direct_ips')(RoutingRule.validate_ips.__func__)
+    _domain_lists = field_validator('block_domains', 'direct_domains', 'ipv4_domains')(RoutingRule.validate_domains.__func__)
     warp_enabled: bool = False
     warp_endpoint: str = "engage.cloudflareclient.com:2408"
     warp_public_key: str = ""
@@ -151,6 +174,8 @@ def apply_to_xray(db, config, node=None):
     node_id = node.id if node is not None and not node.is_local else None
     key, secret = profile_keys(node_id)
     policy = RoutingConfig.model_validate(get_setting(db, key, None) or {})
+    config['routing']['domainStrategy'] = policy.domain_strategy
+    config['outbounds'].append({'tag': 'ipv4', 'protocol': 'freedom', 'settings': {'domainStrategy': 'UseIPv4'}})
     if policy.warp_enabled:
         private = get_secret(db, secret)
         if private is None:
@@ -160,12 +185,28 @@ def apply_to_xray(db, config, node=None):
         if policy.default_outbound == "warp":
             config["outbounds"].remove(warp)
             config["outbounds"].insert(0, warp)
+    if policy.default_outbound in {'ipv4', 'blocked'}:
+        outbound = next(o for o in config['outbounds'] if o.get('tag') == policy.default_outbound)
+        config['outbounds'].remove(outbound)
+        config['outbounds'].insert(0, outbound)
+    if policy.block_bittorrent:
+        config['routing']['rules'].append({'type': 'field', 'protocol': ['bittorrent'], 'outboundTag': 'blocked'})
+    for attribute, field, outbound in [('block_ips', 'ip', 'blocked'), ('block_domains', 'domain', 'blocked'), ('direct_ips', 'ip', 'direct'), ('direct_domains', 'domain', 'direct'), ('ipv4_domains', 'domain', 'ipv4')]:
+        values = getattr(policy, attribute)
+        if values:
+            config['routing']['rules'].append({'type': 'field', field: values, 'outboundTag': outbound})
     for item in policy.rules:
         rule = {"type": "field", "outboundTag": item.outbound}
         if item.domains:
             rule["domain"] = item.domains
         if item.ips:
             rule["ip"] = item.ips
+        if item.protocols:
+            rule['protocol'] = item.protocols
+        if item.network:
+            rule['network'] = item.network
+        if item.port:
+            rule['port'] = item.port
         if item.inbound_ids:
             tags = [i.tag for i in db.query(Inbound).filter(Inbound.id.in_(item.inbound_ids)).all()]
             if not tags:

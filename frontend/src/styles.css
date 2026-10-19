@@ -4231,3 +4231,5 @@ pre {
 .resource-options label { display: flex; gap: 8px; align-items: center; padding: 8px; }
 .resource-options small { display: block; color: var(--text-muted, #7b879d); }
 @media (max-width: 640px) { .commerce-form { grid-template-columns: 1fr; } .commerce-page .page-heading { align-items: start; } .commerce-member { flex-wrap: wrap; } }
+.inbound-advanced { border-top: 1px solid var(--border); padding-top: 20px; min-width: 0; }
+.inbound-advanced > .commerce-actions { margin: 16px 0; flex-wrap: wrap; }

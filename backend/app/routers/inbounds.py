@@ -8,8 +8,10 @@ from app.deps import get_client_ip, require_permission
 from app.models import Admin, Inbound, Node
 from app.schemas import InboundCreate, InboundOut, InboundUpdate, KeyPairOut, OperationResult
 from app.services.audit import write_audit
-from app.services.xray import generate_keypair
+from app.services.xray import generate_keypair, public_key_for
 from app.services.permissions import has_permission
+from app.services.inbound_options import validate_combination
+from types import SimpleNamespace
 
 
 router = APIRouter(prefix="/inbounds", tags=["inbounds"])
@@ -50,6 +52,10 @@ def create_inbound(
         raise HTTPException(status_code=409, detail="تگ اینباند تکراری است.")
     _validate_target(db, payload.node_id)
     data = payload.model_dump()
+    try:
+        validate_combination(SimpleNamespace(**data))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
     if data["node_id"] is None:
         local = db.query(Node).filter(Node.is_local.is_(True)).first()
         data["node_id"] = local.id if local else None
@@ -61,7 +67,13 @@ def create_inbound(
         if not data.get("reality_dest"):
             data["reality_dest"] = "www.cloudflare.com:443"
         data["reality_private_key"] = data.get("reality_private_key") or keys["private_key"]
-        data["reality_public_key"] = data.get("reality_public_key") or keys["public_key"]
+        try:
+            derived = public_key_for(data['reality_private_key'])
+        except Exception:
+            raise HTTPException(status_code=400, detail='Invalid Reality private key.') from None
+        if data.get('reality_public_key') and data['reality_public_key'] != derived:
+            raise HTTPException(status_code=400, detail='Reality public and private keys do not match.')
+        data['reality_public_key'] = derived
         data["reality_short_id"] = data.get("reality_short_id") or keys["short_id"]
         if data["network"] == "tcp" and not data.get("flow"):
             data["flow"] = "xtls-rprx-vision"
@@ -114,6 +126,26 @@ def update_inbound(
     if not inbound:
         raise HTTPException(status_code=404, detail="اینباند پیدا نشد.")
     data = payload.model_dump(exclude_unset=True)
+    if any(value is None for key, value in data.items() if key in {'tag', 'protocol', 'listen', 'port', 'network', 'security', 'remark', 'is_active'}):
+        raise HTTPException(status_code=400, detail='Required inbound fields cannot be null.')
+    merged = {key: getattr(inbound, key) for key in InboundCreate.model_fields}
+    merged.update(data)
+    try:
+        validate_combination(SimpleNamespace(**merged))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    if merged['security'] == 'reality':
+        if not merged['reality_private_key']:
+            generated = generate_keypair()
+            data.update({'reality_private_key': generated['private_key'], 'reality_short_id': merged['reality_short_id'] or generated['short_id'], 'sni': merged['sni'] or 'www.cloudflare.com', 'reality_dest': merged['reality_dest'] or 'www.cloudflare.com:443'})
+            merged.update(data)
+        try:
+            derived = public_key_for(merged['reality_private_key'])
+        except Exception:
+            raise HTTPException(status_code=400, detail='Invalid Reality private key.') from None
+        if 'reality_public_key' in data and data['reality_public_key'] and data['reality_public_key'] != derived:
+            raise HTTPException(status_code=400, detail='Reality public and private keys do not match.')
+        data['reality_public_key'] = derived
     if "tag" in data and data["tag"] != inbound.tag:
         if db.query(Inbound).filter(Inbound.tag == data["tag"]).first():
             raise HTTPException(status_code=409, detail="تگ اینباند تکراری است.")

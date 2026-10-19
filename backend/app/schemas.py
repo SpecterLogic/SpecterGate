@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 # ---------- Auth / admins ----------
@@ -349,7 +349,7 @@ class InboundBase(BaseModel):
     protocol: Literal["vless", "vmess", "trojan", "shadowsocks"] = "vless"
     listen: str = "0.0.0.0"
     port: int = Field(ge=1, le=65535)
-    network: Literal["tcp", "ws", "grpc", "httpupgrade", "xhttp"] = "tcp"
+    network: Literal["tcp", "ws", "grpc", "httpupgrade", "xhttp", "kcp"] = "tcp"
     security: Literal["reality", "tls", "none"] = "reality"
     remark: str = Field(min_length=2, max_length=120)
     sni: str | None = Field(default=None, max_length=255)
@@ -368,6 +368,16 @@ class InboundBase(BaseModel):
     is_active: bool = True
     extra_json: str | None = None
 
+    @field_validator('extra_json')
+    @classmethod
+    def advanced_options(cls, value):
+        from app.services.inbound_options import AdvancedInbound
+        if value is not None:
+            if len(value) > 65536:
+                raise ValueError('Advanced inbound settings exceed 64 KiB.')
+            return AdvancedInbound.model_validate_json(value).model_dump_json()
+        return None
+
 
 class InboundCreate(InboundBase):
     pass
@@ -379,7 +389,7 @@ class InboundUpdate(BaseModel):
     protocol: Literal["vless", "vmess", "trojan", "shadowsocks"] | None = None
     listen: str | None = None
     port: int | None = Field(default=None, ge=1, le=65535)
-    network: Literal["tcp", "ws", "grpc", "httpupgrade", "xhttp"] | None = None
+    network: Literal["tcp", "ws", "grpc", "httpupgrade", "xhttp", "kcp"] | None = None
     security: Literal["reality", "tls", "none"] | None = None
     remark: str | None = Field(default=None, min_length=2, max_length=120)
     sni: str | None = None
@@ -397,6 +407,8 @@ class InboundUpdate(BaseModel):
     tls_key_path: str | None = None
     is_active: bool | None = None
     extra_json: str | None = None
+
+    _advanced_options = field_validator('extra_json')(InboundBase.advanced_options.__func__)
 
 
 class InboundOut(BaseModel):
@@ -427,6 +439,7 @@ class InboundOut(BaseModel):
     tls_key_path: str | None
     is_active: bool
     total_bytes: int
+    extra_json: str | None = None
     created_at: datetime
 
 
@@ -563,6 +576,8 @@ class DashboardOverview(BaseModel):
 
 
 class SettingsOut(BaseModel):
+    time_zone: str = 'Asia/Tehran'
+    calendar: Literal['persian', 'gregory'] = 'persian'
     panel_title: str
     panel_description: str
     subscription_base_url: str
@@ -576,6 +591,18 @@ class SettingsOut(BaseModel):
 
 
 class SettingsUpdate(BaseModel):
+    time_zone: str | None = Field(default=None, max_length=80)
+    calendar: Literal['persian', 'gregory'] | None = None
+
+    @field_validator('time_zone')
+    @classmethod
+    def timezone_name(cls, value):
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+        try:
+            ZoneInfo(value)
+        except (TypeError, ValueError, ZoneInfoNotFoundError):
+            raise ValueError('Use a valid IANA time zone, e.g. Asia/Tehran.') from None
+        return value
     panel_title: str | None = Field(default=None, max_length=100)
     panel_description: str | None = Field(default=None, max_length=300)
     subscription_base_url: str | None = Field(default=None, max_length=300)

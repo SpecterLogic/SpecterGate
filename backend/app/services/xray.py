@@ -10,6 +10,7 @@ import secrets
 import shutil
 import subprocess
 import tempfile
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from functools import wraps
@@ -23,6 +24,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models import Inbound, Node, TrafficSample, VPNUser
 from app.services.permissions import inbound_allowed
+from app.services.inbound_options import client_flow, apply_stream_options, options
 
 
 _process: subprocess.Popen | None = None
@@ -55,6 +57,15 @@ def generate_keypair() -> dict[str, str]:
         "public_key": public_b64,
         "short_id": secrets.token_hex(4),
     }
+
+
+def public_key_for(private: str) -> str:
+    if not isinstance(private, str) or not re.fullmatch(r'[A-Za-z0-9_-]{43}', private):
+        raise ValueError('Invalid Reality private key encoding.')
+    raw = base64.urlsafe_b64decode(private + '=' * (-len(private) % 4))
+    key = X25519PrivateKey.from_private_bytes(raw)
+    public = key.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+    return base64.urlsafe_b64encode(public).decode().rstrip('=')
 
 
 def _binary_path() -> str | None:
@@ -92,6 +103,8 @@ def _stream_settings(inbound: Inbound) -> tuple[dict, list[str]]:
                 "host": inbound.host or inbound.sni or "",
             },
         }
+    elif network == 'kcp':
+        stream = {'network': 'kcp'}
     else:
         stream = {"network": "tcp", "tcpSettings": {"header": {"type": "none"}}}
 
@@ -127,6 +140,7 @@ def _stream_settings(inbound: Inbound) -> tuple[dict, list[str]]:
     else:
         stream["security"] = "none"
 
+    apply_stream_options(inbound, stream)
     return stream, warnings
 
 
@@ -145,8 +159,8 @@ def _clients_for(inbound: Inbound, users: list[VPNUser]) -> list[dict]:
                 "subId": user.sub_token[:16],
                 "reset": 0,
             }
-            if inbound.protocol == "vless" and inbound.network == "tcp" and inbound.flow:
-                client["flow"] = inbound.flow
+            if inbound.protocol == "vless" and inbound.network == "tcp" and client_flow(inbound):
+                client["flow"] = client_flow(inbound)
             clients.append(client)
         elif inbound.protocol == "trojan":
             clients.append({"password": user.password, "email": user.uuid, "limitIp": user.device_limit or 0})
@@ -183,11 +197,7 @@ def _build_inbound(inbound: Inbound, users: list[VPNUser]) -> tuple[dict | None,
         "protocol": inbound.protocol,
         "settings": settings_block,
         "streamSettings": stream,
-        "sniffing": {
-            "enabled": True,
-            "destOverride": ["http", "tls", "quic"],
-            "routeOnly": False,
-        },
+        "sniffing": options(inbound).sniffing.model_dump(),
     }
     return config, warnings
 

@@ -3,14 +3,26 @@ import clsx, { type ClassValue } from "clsx";
 export const cn = (...inputs: ClassValue[]) => clsx(inputs);
 
 const faNumber = new Intl.NumberFormat("fa-IR", { maximumFractionDigits: 1 });
-const faDate = new Intl.DateTimeFormat("fa-IR", { year: "numeric", month: "short", day: "numeric" });
-const faDateTime = new Intl.DateTimeFormat("fa-IR", {
+let datePreferences: { timeZone: string; calendar: string } = { timeZone: 'Asia/Tehran', calendar: 'persian' };
+let faDate = new Intl.DateTimeFormat("fa-IR", { ...datePreferences, year: "numeric", month: "short", day: "numeric" });
+let faDateTime = new Intl.DateTimeFormat("fa-IR", {
+  ...datePreferences,
   year: "numeric",
   month: "short",
   day: "numeric",
   hour: "2-digit",
   minute: "2-digit",
 });
+
+export function configureDatePreferences(timeZone: string, calendar: string) {
+  if (datePreferences.timeZone === timeZone && datePreferences.calendar === calendar) return;
+  try {
+    const next = { timeZone, calendar };
+    const date = new Intl.DateTimeFormat('fa-IR', { ...next, year: 'numeric', month: 'short', day: 'numeric' });
+    const datetime = new Intl.DateTimeFormat('fa-IR', { ...next, year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    datePreferences = next; faDate = date; faDateTime = datetime;
+  } catch { /* Retain valid defaults if a browser cannot render a preference. */ }
+}
 
 export function formatNumber(value: number | null | undefined): string {
   if (value === null || value === undefined) return "—";
@@ -76,11 +88,12 @@ export function fromDateTimeLocal(value: string): string | null {
 }
 
 export function toLocalDate(value: string): string {
-  return new Intl.DateTimeFormat("fa-IR", { weekday: "short" }).format(new Date(`${value}T12:00:00`));
+  return new Intl.DateTimeFormat("fa-IR", { ...datePreferences, weekday: "short" }).format(new Date(`${value}T12:00:00`));
 }
 
 export function todayLabel(): string {
   return new Intl.DateTimeFormat("fa-IR", {
+    ...datePreferences,
     weekday: "long",
     day: "numeric",
     month: "long",

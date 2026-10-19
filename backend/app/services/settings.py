@@ -8,6 +8,8 @@ from app.models import Setting
 
 
 DEFAULT_SETTINGS: dict[str, Any] = {
+    'time_zone': 'Asia/Tehran',
+    'calendar': 'persian',
     "panel_title": "SpecterGate",
     "panel_description": "پنل یکپارچه مدیریت پروکسی و اشتراک",
     "subscription_base_url": app_settings.subscription_base_url or "",
