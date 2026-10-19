@@ -1,0 +1,48 @@
+name: spectergate
+
+services:
+  backend:
+    build:
+      context: ./backend
+      args:
+        XRAY_VERSION: ${XRAY_VERSION:-26.3.27}
+    restart: unless-stopped
+    environment:
+      SPECTERGATE_SECRET_KEY: ${SPECTERGATE_SECRET_KEY:?Set SPECTERGATE_SECRET_KEY in .env}
+      SPECTERGATE_ADMIN_USERNAME: ${SPECTERGATE_ADMIN_USERNAME:-admin}
+      SPECTERGATE_ADMIN_PASSWORD: ${SPECTERGATE_ADMIN_PASSWORD:?Set SPECTERGATE_ADMIN_PASSWORD in .env}
+      SPECTERGATE_SESSION_COOKIE_SECURE: ${SPECTERGATE_SESSION_COOKIE_SECURE:-true}
+      SPECTERGATE_PUBLIC_HOST: ${SPECTERGATE_PUBLIC_HOST:-localhost}
+      SPECTERGATE_SUBSCRIPTION_BASE_URL: ${SPECTERGATE_SUBSCRIPTION_BASE_URL:-}
+      SPECTERGATE_DATABASE_URL: sqlite:////app/data/spectergate.db
+      SPECTERGATE_XRAY_ENABLED: "true"
+      SPECTERGATE_XRAY_BINARY: /usr/local/bin/xray
+      SPECTERGATE_XRAY_CONFIG_PATH: /app/data/xray/config.json
+      SPECTERGATE_XRAY_LOG_PATH: /app/data/xray/xray.log
+      SPECTERGATE_XRAY_API_ADDRESS: 127.0.0.1:10085
+      SPECTERGATE_DEMO_DATA: "false"
+    volumes:
+      - spectergate_data:/app/data
+    # Client-facing inbound ports. Add every inbound port you create here.
+    ports:
+      - "8443:8443"
+      - "2087:2087"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  web:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "80:80"
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  spectergate_data:

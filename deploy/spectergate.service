@@ -1,0 +1,27 @@
+[Unit]
+Description=SpecterGate Panel (FastAPI + Xray)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=spectergate
+Group=spectergate
+WorkingDirectory=/opt/spectergate/backend
+EnvironmentFile=/opt/spectergate/backend/.env
+Environment=XRAY_LOCATION_ASSET=/usr/local/share/xray
+ExecStart=/opt/spectergate/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips=127.0.0.1
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+KillMode=mixed
+PrivateTmp=true
+NoNewPrivileges=true
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/spectergate/backend/data
+
+[Install]
+WantedBy=multi-user.target

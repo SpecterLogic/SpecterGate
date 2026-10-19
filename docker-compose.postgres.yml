@@ -1,0 +1,29 @@
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d --build
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: spectergate
+      POSTGRES_USER: spectergate
+      POSTGRES_PASSWORD: ${SPECTERGATE_DB_PASSWORD:?Set SPECTERGATE_DB_PASSWORD in .env}
+    volumes:
+      - spectergate_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U spectergate -d spectergate"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    security_opt:
+      - no-new-privileges:true
+
+  backend:
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SPECTERGATE_DATABASE_URL: postgresql+psycopg://spectergate:${SPECTERGATE_DB_PASSWORD}@db:5432/spectergate
+
+volumes:
+  spectergate_pgdata:

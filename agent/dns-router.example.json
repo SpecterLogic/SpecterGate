@@ -1,0 +1,13 @@
+{
+  "listen": "0.0.0.0:53",
+  "routes": [
+    {
+      "domain": "t.example.com",
+      "upstream": "127.0.0.1:5310"
+    },
+    {
+      "domain": "n.example.com",
+      "upstream": "127.0.0.1:5311"
+    }
+  ]
+}

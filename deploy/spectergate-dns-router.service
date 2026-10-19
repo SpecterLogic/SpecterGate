@@ -1,0 +1,16 @@
+[Unit]
+Description=SpecterGate DNS tunnel multiplexer
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/python3 /opt/spectergate-agent/dns_router.py --config /etc/spectergate/dns-router.json
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
