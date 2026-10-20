@@ -9,7 +9,7 @@ from urllib.parse import quote, urlencode
 from app.models import Inbound, Node, VPNUser
 from app.services.settings import get_setting
 from app.services.permissions import inbound_allowed
-from app.services.inbound_options import client_flow, options, subscription_inbounds, client_sni, client_short_id
+from app.services.inbound_options import client_port, client_flow, options, subscription_inbounds, client_sni, client_short_id
 
 
 def _host_for(inbound: Inbound, node: Node | None, public_host: str) -> str:
@@ -38,7 +38,7 @@ def build_link(inbound: Inbound, node: Node | None, user: VPNUser, public_host: 
         host = f"[{host}]"
     sni = advanced.reality.serverNames[0] if inbound.security == "reality" and advanced.reality.serverNames else inbound.sni
     short_id = advanced.reality.shortIds[0] if advanced.reality.shortIds else inbound.reality_short_id
-    port = inbound.port
+    port = client_port(inbound)
     remark = quote(f"{inbound.remark} | {user.username}")
     network = inbound.network if inbound.network != "tcp" else None
 
@@ -194,7 +194,7 @@ def build_clash_config(user: VPNUser, links: list[dict], inbounds: list[Inbound]
                 "name": name,
                 "type": "vless",
                 "server": host,
-                "port": inbound.port,
+                "port": client_port(inbound),
                 "uuid": user.uuid,
                 "udp": True,
                 "network": inbound.network,
@@ -224,7 +224,7 @@ def build_clash_config(user: VPNUser, links: list[dict], inbounds: list[Inbound]
                 "name": name,
                 "type": "vmess",
                 "server": host,
-                "port": inbound.port,
+                "port": client_port(inbound),
                 "uuid": user.uuid,
                 "alterId": 0,
                 "cipher": "auto",
@@ -243,7 +243,7 @@ def build_clash_config(user: VPNUser, links: list[dict], inbounds: list[Inbound]
                 "name": name,
                 "type": "trojan",
                 "server": host,
-                "port": inbound.port,
+                "port": client_port(inbound),
                 "password": user.password,
                 "udp": True,
                 "sni": client_sni(inbound),
@@ -256,7 +256,7 @@ def build_clash_config(user: VPNUser, links: list[dict], inbounds: list[Inbound]
                     "name": name,
                     "type": "ss",
                     "server": host,
-                    "port": inbound.port,
+                    "port": client_port(inbound),
                     "cipher": "chacha20-ietf-poly1305",
                     "password": user.password,
                     "udp": True,

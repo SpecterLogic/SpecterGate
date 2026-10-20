@@ -10,6 +10,7 @@ from app.schemas import KeyPairOut, OperationResult, XrayStatusOut
 from app.services import xray as xray_service
 from app.services.audit import write_audit
 from app.services.routing import redact_config
+from app.services.settings import set_setting
 
 
 router = APIRouter(prefix="/xray", tags=["xray"])
@@ -41,6 +42,8 @@ def apply(
     admin: Admin = Depends(write_access),
 ):
     result = xray_service.apply_config(db, restart=restart)
+    if result['ok']:
+        set_setting(db, 'xray_autostart', restart)
     write_audit(
         db,
         admin,
@@ -63,6 +66,7 @@ def restart(
         xray_service.restart_process()
     except RuntimeError as exc:
         return OperationResult(ok=False, message=str(exc))
+    set_setting(db, 'xray_autostart', True)
     write_audit(db, admin, "restart_xray", "xray", None, "راه‌اندازی مجدد Xray", get_client_ip(request))
     return OperationResult(ok=True, message="Xray راه‌اندازی مجدد شد.")
 
@@ -73,6 +77,8 @@ def stop(
     db: Session = Depends(get_db),
     admin: Admin = Depends(write_access),
 ):
+    set_setting(db, 'xray_autostart', False)
+    db.commit()
     xray_service.stop_process()
     write_audit(db, admin, "stop_xray", "xray", None, "توقف Xray", get_client_ip(request))
     return OperationResult(ok=True, message="Xray متوقف شد.")

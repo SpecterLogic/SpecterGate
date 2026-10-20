@@ -39,6 +39,10 @@ sudo spectergate start
 
 The installer preserves existing `.env` and data on reruns. It does not migrate an existing installation between database engines. Back up before replacing the application version. A working TLS certificate is required before public login. Certificate renewal is managed by the distribution Certbot timer; check it with `systemctl list-timers`.
 
+If Xray has an applied configuration, it is restored automatically after service restarts and unexpected core exits. Stopping Xray from the panel persists the stopped state until it is explicitly restarted/applied again. Startup applies a freshly validated configuration from the database, so account quota/expiry changes are retained.
+
+For a deployment behind a trusted TLS passthrough/SNI proxy, bind the core to loopback, enable PROXY protocol for the corresponding TCP transports, and set the inbound's public share port separately from its internal listen port. Preserve the original client address at both the frontend proxy and core. Certificate files must be readable by the service account, with renewal hooks updating protected copies and restarting the managed core.
+
 For development without a domain, run the backend on loopback and use SSH forwarding (`ssh -L 8000:localhost:8000 user@server`). Set the local subscription URL and disable Secure cookies only for that local HTTP test. The production installer requires a domain and HTTPS.
 
 ## Bot and encrypted backups

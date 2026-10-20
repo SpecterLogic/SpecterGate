@@ -2,7 +2,7 @@
 from app.models import VPNUser, Inbound, Node
 from app.services.links import _host_for
 from app.services.permissions import inbound_allowed
-from app.services.inbound_options import client_flow, apply_stream_options, subscription_inbounds, options, client_sni, client_short_id
+from app.services.inbound_options import client_port, client_flow, apply_stream_options, subscription_inbounds, options, client_sni, client_short_id
 
 
 def export_profiles(users: list[VPNUser], inbounds: list[Inbound], nodes: dict[int, Node], host: str, format: str):
@@ -20,7 +20,7 @@ def export_profiles(users: list[VPNUser], inbounds: list[Inbound], nodes: dict[i
                     continue
                 if inbound.network in {"xhttp", "kcp"} or options(inbound).tcp_http_obfuscation:
                     continue
-                outbound = {"type": inbound.protocol, "tag": name, "server": address, "server_port": inbound.port}
+                outbound = {"type": inbound.protocol, "tag": name, "server": address, "server_port": client_port(inbound)}
                 if inbound.protocol in {"vless", "vmess"}:
                     outbound["uuid"] = user.uuid
                     if inbound.protocol == "vmess":
@@ -68,9 +68,9 @@ def export_profiles(users: list[VPNUser], inbounds: list[Inbound], nodes: dict[i
                 identity = {"id": user.uuid, "encryption": "none"} if inbound.protocol == "vless" else {"id": user.uuid, "security": "auto"}
                 if inbound.protocol == "vless" and client_flow(inbound) and inbound.network == "tcp":
                     identity["flow"] = client_flow(inbound)
-                settings = {"vnext": [{"address": address, "port": inbound.port, "users": [identity]}]}
+                settings = {"vnext": [{"address": address, "port": client_port(inbound), "users": [identity]}]}
             else:
-                server = {"address": address, "port": inbound.port, "password": user.password}
+                server = {"address": address, "port": client_port(inbound), "password": user.password}
                 if inbound.protocol == "shadowsocks":
                     server["method"] = "chacha20-ietf-poly1305"
                 settings = {"servers": [server]}

@@ -289,7 +289,7 @@ export default function InboundsPage() {
       ...current,
       network,
       security: current.security === 'reality' && !['tcp', 'grpc', 'xhttp'].includes(network) ? 'none' : current.security,
-      advanced: JSON.stringify({ ...JSON.parse(current.advanced), ...(!['tcp', 'ws', 'httpupgrade'].includes(network) ? { proxy_protocol: false } : {}), ...(network !== 'tcp' ? { tcp_http_obfuscation: false } : {}) }),
+      advanced: JSON.stringify({ ...JSON.parse(current.advanced), ...(network === 'kcp' ? { proxy_protocol: false } : {}), ...(network !== 'tcp' ? { tcp_http_obfuscation: false } : {}) }),
       flow: current.protocol === "vless" && network === "tcp" && current.security === "reality" ? "xtls-rprx-vision" : "",
     }));
   }

@@ -100,6 +100,7 @@ class AdvancedInbound(StrictModel):
     subscription_order: int = Field(default=0, ge=0, le=1000000)
     exclude_from_subscription: bool = False
     share_host: str = Field(default='', max_length=253)
+    share_port: int | None = Field(default=None, ge=1, le=65535)
     proxy_protocol: bool = False
     tcp_http_obfuscation: bool = False
     disable_xtls_flow: bool = False
@@ -145,6 +146,10 @@ def client_flow(inbound):
     return None if options(inbound).disable_xtls_flow else inbound.flow
 
 
+def client_port(inbound):
+    return options(inbound).share_port or inbound.port
+
+
 def validate_combination(inbound):
     network, security, protocol = inbound.network, inbound.security, inbound.protocol
     if security == 'reality' and (protocol != 'vless' or network not in {'tcp', 'xhttp', 'grpc'}):
@@ -154,8 +159,8 @@ def validate_combination(inbound):
     if inbound.flow and (protocol != 'vless' or network != 'tcp' or security == 'none'):
         raise ValueError('XTLS flow requires VLESS over RAW/TCP with TLS or Reality.')
     advanced = options(inbound)
-    if advanced.proxy_protocol and network not in {'tcp', 'ws', 'httpupgrade'}:
-        raise ValueError('PROXY protocol is supported for RAW/TCP, WebSocket and HTTPUpgrade.')
+    if advanced.proxy_protocol and network == 'kcp':
+        raise ValueError('PROXY protocol requires a TCP-based transport.')
     if advanced.tcp_http_obfuscation and network != 'tcp':
         raise ValueError('HTTP obfuscation requires RAW/TCP.')
 
@@ -169,10 +174,13 @@ def apply_stream_options(inbound, stream, client=False):
     if inbound.network == 'tcp' and advanced.tcp_http_obfuscation:
         stream['tcpSettings'] = {'header': {'type': 'http'}}
     if not client and advanced.proxy_protocol:
-        field = {'tcp': 'tcpSettings', 'ws': 'wsSettings', 'httpupgrade': 'httpupgradeSettings'}[inbound.network]
-        stream.setdefault(field, {})['acceptProxyProtocol'] = True
+        field = {'tcp': 'tcpSettings', 'ws': 'wsSettings', 'httpupgrade': 'httpupgradeSettings'}.get(inbound.network)
+        if field:
+            stream.setdefault(field, {})['acceptProxyProtocol'] = True
     if not client and advanced.sockopt is not None:
         stream['sockopt'] = advanced.sockopt.model_dump()
+    if not client and advanced.proxy_protocol:
+        stream.setdefault('sockopt', {})['acceptProxyProtocol'] = True
     if inbound.security == 'tls':
         tls = advanced.tls.model_dump()
         if client:

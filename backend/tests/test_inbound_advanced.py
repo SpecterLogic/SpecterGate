@@ -51,7 +51,7 @@ def test_display_timezone_and_calendar(client, auth):
 @pytest.mark.parametrize('network', ['tcp', 'xhttp', 'grpc', 'kcp'])
 def test_advanced_server_and_client_agree(tmp_path, network):
     keys = generate_keypair()
-    advanced = {'share_host': 'cdn.example.com', 'sniffing': {'routeOnly': True}, 'sockopt': {'tcpFastOpen': True}, 'reality': {'serverNames': ['example.com', 'www.example.com'], 'shortIds': ['abcd', '12345678'], 'spiderX': '/check', 'maxTimeDiff': 60000, 'minClientVer': '1.8.0', 'limitFallbackUpload': {'afterBytes': 1024, 'bytesPerSec': 2048, 'burstBytesPerSec': 4096}}, 'xhttp': {'mode': 'packet-up'}, 'kcp': {'mtu': 1300, 'congestion': True}}
+    advanced = {'share_host': 'cdn.example.com', 'share_port': 443, 'sniffing': {'routeOnly': True}, 'sockopt': {'tcpFastOpen': True}, 'reality': {'serverNames': ['example.com', 'www.example.com'], 'shortIds': ['abcd', '12345678'], 'spiderX': '/check', 'maxTimeDiff': 60000, 'minClientVer': '1.8.0', 'limitFallbackUpload': {'afterBytes': 1024, 'bytesPerSec': 2048, 'burstBytesPerSec': 4096}}, 'xhttp': {'mode': 'packet-up'}, 'kcp': {'mtu': 1300, 'congestion': True}}
     inbound = Inbound(id=1, is_active=True, tag='advanced', remark='Advanced', listen='127.0.0.1', port=25445, protocol='vless', network=network, security='none' if network == 'kcp' else 'reality', sni='example.com', path='/connect', service_name='advanced', reality_dest='example.com:443', reality_private_key=keys['private_key'], reality_public_key=keys['public_key'], reality_short_id='abcd', extra_json=json.dumps(advanced))
     user = VPNUser(id=1, username='advanced', uuid='e3bc3070-d54e-433d-9767-066e8edfaad5', password='test-advanced-password', sub_token='test-advanced-token', is_active=True)
     built, _ = _build_inbound(inbound, [user])
@@ -60,6 +60,8 @@ def test_advanced_server_and_client_agree(tmp_path, network):
     exported = export_profiles([user], [inbound], {}, 'fallback.test', 'json')[0]
     outbound = exported['outbounds'][0]
     assert outbound['settings']['vnext'][0]['address'] == 'cdn.example.com'
+    assert outbound['settings']['vnext'][0]['port'] == 443
+    assert built['port'] == 25445
     assert 'sockopt' not in outbound['streamSettings']
     if network != 'kcp':
         assert built['streamSettings']['realitySettings']['shortIds'] == ['abcd', '12345678']

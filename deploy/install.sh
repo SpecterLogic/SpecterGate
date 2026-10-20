@@ -83,6 +83,10 @@ rsync -a \
   --exclude '.git' \
   "$REPO_DIR/" "$APP_DIR/"
 
+# Downloaded source folders may be private temporary directories. rsync -a
+# copies their root mode too; the service account must traverse the app root.
+chmod 0755 "$APP_DIR"
+
 # Build the frontend on the server.
 cd "$APP_DIR/frontend"
 npm ci
@@ -158,6 +162,19 @@ install -m 0644 "$APP_DIR/deploy/spectergate-dns-router.service" /etc/systemd/sy
 systemctl daemon-reload
 systemctl enable spectergate
 systemctl restart spectergate
+
+READY=false
+for attempt in {1..30}; do
+  if curl -fsS --max-time 3 http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
+    READY=true
+    break
+  fi
+  sleep 1
+done
+if [[ "$READY" != true ]]; then
+  echo 'SpecterGate did not become healthy. Inspect: journalctl -u spectergate' >&2
+  exit 1
+fi
 
 # Obtain a certificate with a temporary HTTP-only Nginx site, then install the
 # full TLS config. This avoids Nginx failing on missing certificate files.

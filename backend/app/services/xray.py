@@ -247,7 +247,7 @@ def generate_config(
         log_settings = {
             "loglevel": "warning",
             "access": "none",
-            "error": str(Path(settings.xray_log_path)),
+            "error": str(Path(settings.xray_log_path).resolve()),
         }
 
     config = {
@@ -426,22 +426,29 @@ def start_process() -> None:
     binary = _binary_path()
     if not binary:
         raise RuntimeError("باینری Xray نصب نیست.")
-    config_path = Path(settings.xray_config_path)
+    config_path = Path(settings.xray_config_path).resolve()
     if not config_path.exists():
         raise RuntimeError("فایل کانفیگ وجود ندارد؛ ابتدا کانفیگ را اعمال کنید.")
-    Path(settings.xray_log_path).parent.mkdir(parents=True, exist_ok=True)
-    log_handle = open(settings.xray_log_path, "a", encoding="utf-8")
+    log_path = Path(settings.xray_log_path).resolve()
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_handle = open(log_path, "a", encoding="utf-8")
     try:
         _process = subprocess.Popen(
             [binary, "run", "-c", str(config_path)],
             stdout=log_handle,
             stderr=subprocess.STDOUT,
             cwd=str(config_path.parent),
+            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
         )
     except OSError as exc:
         raise RuntimeError(str(exc)) from exc
     finally:
         log_handle.close()
+    try:
+        code = _process.wait(timeout=0.25)
+    except subprocess.TimeoutExpired:
+        return
+    raise RuntimeError(f'Xray exited during startup (code {code}); inspect the core log.')
 
 
 @serialized
