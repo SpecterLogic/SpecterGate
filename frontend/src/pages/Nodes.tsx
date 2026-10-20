@@ -17,7 +17,7 @@ import {
   Wifi,
   WifiOff,
 } from "lucide-react";
-import { api } from "../lib/api";
+import { api, API_BASE } from "../lib/api";
 import { useToast } from "../lib/toast";
 import type { Node, OperationResult } from "../lib/types";
 import { cn, formatDateTime, formatNumber, formatRelative } from "../lib/format";
@@ -68,6 +68,7 @@ function nodeToForm(node: Node): NodeForm {
 }
 
 export default function NodesPage() {
+  const apiOrigin = new URL(API_BASE || '/', window.location.origin).href.replace(/\/$/, '');
   const toast = useToast();
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
@@ -457,7 +458,7 @@ export default function NodesPage() {
         <div className="guide-block">
           <span>ضربان قلب (هر ۶۰ ثانیه)</span>
           <pre className="code-block" dir="ltr">
-{`curl -X POST ${window.location.origin}/api/agent/heartbeat \\
+{`curl -X POST ${apiOrigin}/api/agent/heartbeat \\
   -H "X-Node-Key: ${guideNode?.api_key ?? "<NODE_KEY>"}" \\
   -H "Content-Type: application/json" \\
   -d '{"cpu_usage": 18.4, "memory_usage": 42.1, "status": "online"}'`}
@@ -466,7 +467,7 @@ export default function NodesPage() {
         <div className="guide-block">
           <span>دریافت خودکار کانفیگ</span>
           <pre className="code-block" dir="ltr">
-{`curl ${window.location.origin}/api/agent/config \\
+{`curl ${apiOrigin}/api/agent/config \\
   -H "X-Node-Key: ${guideNode?.api_key ?? "<NODE_KEY>"}"`}
           </pre>
           <p className="guide-foot">
@@ -476,7 +477,7 @@ export default function NodesPage() {
         <div className="guide-block">
           <span>گزارش مصرف کاربران</span>
           <pre className="code-block" dir="ltr">
-{`curl -X POST ${window.location.origin}/api/agent/usage \\
+{`curl -X POST ${apiOrigin}/api/agent/usage \\
   -H "X-Node-Key: ${guideNode?.api_key ?? "<NODE_KEY>"}" \\
   -H "Content-Type: application/json" \\
   -d '{"entries": [{"uuid": "<USER_UUID>", "upload": 1048576, "download": 5242880}]}'`}

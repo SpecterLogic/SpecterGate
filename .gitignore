@@ -32,3 +32,4 @@ frontend/dist/
 .verification/
 docs/screenshots/
 frontend/docs/screenshots/
+frontend/dist-private/

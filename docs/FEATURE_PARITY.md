@@ -45,7 +45,8 @@ This checklist tracks functional coverage against the requested 3x-ui, PasarGuar
 | Live per-inbound speed/client session counts | Aggregate traffic only; no claimed live-session/device enforcement |
 | LDAP, external authentication, MFA | Local authentication only |
 | Email / Discord integration and additional notifications | Not implemented; Telegram scope remains administration and owner backups |
-| Custom dashboard/subscription paths and a restart/update management UI | Not implemented; service CLI is available |
+| Private dashboard URL | Dedicated HTTPS port and random path implemented; authentication remains required |
+| Custom subscription paths and a restart/update management UI | Not implemented; service CLI is available |
 | Complete Linux runtime validation | Still requires clean Ubuntu/Debian installation, PostgreSQL backup/restore, real clients and representative networks |
 
 ## Compatibility references

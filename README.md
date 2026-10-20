@@ -25,10 +25,12 @@ This project is under active development. Server implementations for AmneziaWG, 
 On a dedicated Debian/Ubuntu server (Python 3.11+), replace the domain and run:
 
 ```bash
-curl -fsSLo /tmp/spectergate-install.sh https://raw.githubusercontent.com/SpecterLogic/SpecterGate/main/install.sh && sudo bash /tmp/spectergate-install.sh --domain panel.example.com
+curl -fsSLo /tmp/spectergate-install.sh https://raw.githubusercontent.com/SpecterLogic/SpecterGate/main/install.sh && sudo bash /tmp/spectergate-install.sh --domain panel.example.com --private-panel
 ```
 
 Add `--database postgresql` for a local PostgreSQL database, or `--version TAG_OR_COMMIT` to select an existing version. SQLite is the default. The installer generates owner credentials, configures HTTPS and installs the `spectergate` management command. Your domain must point to the server, with TCP ports 80/443 reachable.
+
+`--private-panel` puts management on a dedicated port and random URL path; allow that port in your provider firewall. Use `--panel-port PORT` to select the port. The full private URL is printed during installation. Public subscription paths remain available separately. HTTPS and administrator authentication are still required.
 
 ```bash
 spectergate status
@@ -124,3 +126,4 @@ Native configuration checks can be enabled with `XRAY_TEST_BINARY` pointing to a
 ## License
 
 [MIT](LICENSE).
+- [راهنمای فارسی از نصب تا ساخت کانفیگ](docs/GUIDE_FA.md)

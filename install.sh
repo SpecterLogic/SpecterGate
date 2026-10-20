@@ -6,7 +6,7 @@ ARGS=()
 while (($#)); do
   case "$1" in
     --version) VERSION="${2:?Missing version}"; shift 2 ;;
-    --help|-h) echo 'Usage: sudo bash install.sh [--version TAG_OR_COMMIT] --domain panel.example.com [--database sqlite|postgresql]'; exit 0 ;;
+    --help|-h) echo 'Usage: sudo bash install.sh [--version TAG_OR_COMMIT] --domain panel.example.com [--database sqlite|postgresql] [--private-panel] [--panel-port PORT]'; exit 0 ;;
     *) ARGS+=("$1"); shift ;;
   esac
 done

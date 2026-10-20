@@ -45,6 +45,18 @@ For a deployment behind a trusted TLS passthrough/SNI proxy, bind the core to lo
 
 For development without a domain, run the backend on loopback and use SSH forwarding (`ssh -L 8000:localhost:8000 user@server`). Set the local subscription URL and disable Secure cookies only for that local HTTP test. The production installer requires a domain and HTTPS.
 
+## Private management URL
+
+On a fresh installation add `--private-panel` (optionally `--panel-port PORT`). On an existing installation with a valid certificate:
+
+```bash
+sudo python3 /opt/spectergate/deploy/panel_access.py --domain panel.example.com
+```
+
+The command builds a separate management frontend with the correct base path, moves the administrative API and cookie path under a random URL prefix, and configures a dedicated HTTPS listener. Root and old administrative paths return 404. Existing administrator credentials are retained. The access path is stored in `/etc/spectergate/panel-access.json`; do not publish it. The public subscription frontend keeps its own build so it does not disclose the management prefix.
+
+If UFW is active, the selected port is allowed automatically; provider firewalls require a separate rule. A random port/path reduces casual discovery and is not an authentication factor. The tool restores the preceding Nginx/environment configuration if its health check fails. Re-running it keeps the path and port unless another port is explicitly selected. Custom SNI deployments still need their existing topology preserved during broader upgrades.
+
 ## Bot and encrypted backups
 
 Each owner creates their own bot with Telegram's BotFather and enters its token in **Bot and backups**. The panel has no shared bot token. Set the owner's numeric Telegram user ID, a separate backup password (at least 16 characters), and explicitly bind any administrators allowed to create users. Every authorized person must start a private conversation with the bot.

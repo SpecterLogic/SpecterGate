@@ -5,11 +5,15 @@ set -euo pipefail
 
 DOMAIN=""
 DATABASE="sqlite"
+PRIVATE_PANEL=false
+PANEL_PORT=""
 while (($#)); do
   case "$1" in
     --domain) DOMAIN="${2:?Missing domain}"; shift 2 ;;
     --database) DATABASE="${2:?Missing database}"; shift 2 ;;
-    --help|-h) echo 'Usage: sudo bash deploy/install.sh --domain panel.example.com [--database sqlite|postgresql]'; exit 0 ;;
+    --private-panel) PRIVATE_PANEL=true; shift ;;
+    --panel-port) PANEL_PORT="${2:?Missing port}"; PRIVATE_PANEL=true; shift 2 ;;
+    --help|-h) echo 'Usage: sudo bash deploy/install.sh --domain panel.example.com [--database sqlite|postgresql] [--private-panel] [--panel-port PORT]'; exit 0 ;;
     --*) echo "Unknown option: $1" >&2; exit 1 ;;
     *) [[ -z "$DOMAIN" ]] || { echo 'Unexpected argument.' >&2; exit 1; }; DOMAIN="$1"; shift ;;
   esac
@@ -25,6 +29,9 @@ if [[ ! "$DOMAIN" =~ ^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?\.[a-zA-Z]{2,63}$ ]
   exit 1
 fi
 [[ "$DATABASE" == sqlite || "$DATABASE" == postgresql ]] || { echo 'Supported databases: sqlite, postgresql.' >&2; exit 1; }
+if [[ -n "$PANEL_PORT" ]] && { [[ ! "$PANEL_PORT" =~ ^[0-9]{4,5}$ ]] || ((10#$PANEL_PORT < 1024 || 10#$PANEL_PORT > 65535)); }; then
+  echo 'Panel port must be between 1024 and 65535.' >&2; exit 1
+fi
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "This installer must run as root." >&2
   exit 1
@@ -207,6 +214,12 @@ nginx -t
 systemctl reload nginx
 
 echo "SpecterGate is installed."
-echo "Panel: https://$DOMAIN"
+if [[ "$PRIVATE_PANEL" == true ]]; then
+  ACCESS_ARGS=(--domain "$DOMAIN")
+  [[ -z "$PANEL_PORT" ]] || ACCESS_ARGS+=(--port "$PANEL_PORT")
+  python3 "$APP_DIR/deploy/panel_access.py" "${ACCESS_ARGS[@]}"
+else
+  echo "Panel: https://$DOMAIN"
+fi
 echo "Management: spectergate status | logs | restart | backup | decrypt-backup"
 echo "Node agent and DNS router are installed but not enabled; configure their env/config first."

@@ -1,4 +1,4 @@
-const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "";
+const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? import.meta.env.BASE_URL.replace(/\/$/, "");
 
 export class ApiError extends Error {
   status: number;
