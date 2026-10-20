@@ -885,7 +885,12 @@ pre {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  min-height: 0;
+  overflow-y: auto;
+  flex: 1 1 auto;
 }
+.sidebar-top, .workspace-chip, .core-status, .sidebar-user { flex-shrink: 0; }
+.nav-item { flex-shrink: 0; }
 .nav-caption {
   padding: 0 12px 8px;
   color: var(--muted-2);

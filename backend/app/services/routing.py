@@ -175,7 +175,7 @@ def apply_to_xray(db, config, node=None):
     key, secret = profile_keys(node_id)
     policy = RoutingConfig.model_validate(get_setting(db, key, None) or {})
     config['routing']['domainStrategy'] = policy.domain_strategy
-    config['outbounds'].append({'tag': 'ipv4', 'protocol': 'freedom', 'settings': {'domainStrategy': 'UseIPv4'}})
+    config['outbounds'].append({'tag': 'ipv4', 'protocol': 'freedom', 'settings': {'domainStrategy': 'ForceIPv4'}})
     if policy.warp_enabled:
         private = get_secret(db, secret)
         if private is None:

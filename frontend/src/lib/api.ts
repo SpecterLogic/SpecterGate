@@ -48,6 +48,7 @@ async function request<T>(path: string, options: RequestInit = {}, responseType?
 }
 
 export const api = {
+  upload: <T>(path: string, body: FormData) => request<T>(path, { method: "POST", body }),
   download: (path: string, body?: unknown) => request<Blob>(path, { method: "POST", body: JSON.stringify(body ?? {}) }, "blob"),
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>

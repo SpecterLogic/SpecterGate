@@ -52,6 +52,23 @@ def create_backup(password: str) -> tuple[str, bytes]:
         os.chmod(snapshot, 0o600)
         with tarfile.open(fileobj=archive_bytes, mode="w:gz") as archive:
             archive.add(snapshot, arcname=snapshot.name)
+            from app.services.data_restore import export_data
+            from app.database import engine
+            if database_kind == "sqlite":
+                from sqlalchemy import create_engine
+                snapshot_engine = create_engine(f"sqlite:///{snapshot.as_posix()}")
+                try:
+                    with snapshot_engine.connect() as connection:
+                        logical = export_data(connection)
+                finally:
+                    snapshot_engine.dispose()
+            else:
+                with engine.connect().execution_options(isolation_level="REPEATABLE READ") as connection:
+                    with connection.begin():
+                        logical = export_data(connection)
+            portable = tarfile.TarInfo("data.json")
+            portable.size, portable.mode = len(logical), 0o600
+            archive.addfile(portable, io.BytesIO(logical))
             metadata = json.dumps({"application": "SpecterGate", "version": settings.version, "created_at": stamp, "database": database_kind}).encode()
             info = tarfile.TarInfo("manifest.json")
             info.size, info.mode = len(metadata), 0o600

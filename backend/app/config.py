@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     xray_api_address: str = "127.0.0.1:10085"
 
     demo_data: bool = False
+    dnstt_enabled: bool = False
+    dnstt_binary: str = "dnstt-server"
+    dns_listen: str = "127.0.0.1:5353"
+    dns_gateway_ipv4_only: bool = True
     node_heartbeat_timeout: int = 180
 
     @classmethod

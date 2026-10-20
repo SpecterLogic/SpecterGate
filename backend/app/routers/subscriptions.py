@@ -21,6 +21,7 @@ from app.services.links import (
 )
 from app.services.settings import get_setting
 from app.services.exports import export_profiles
+from app.services.subscription_status import record as status_record
 
 
 router = APIRouter(tags=["subscriptions"])
@@ -69,7 +70,7 @@ def _headers(upload: int, download: int, limit: int | None, expire_at, title: st
         "subscription-userinfo": (
             f"upload={int(upload)}; download={int(download)}; total={total}; expire={expire}"
         ),
-        "profile-update-interval": "12",
+        "profile-update-interval": "1",
         "profile-title": f"base64:{base64.b64encode(title.encode()).decode()}",
         "cache-control": "no-store",
     }
@@ -130,6 +131,12 @@ def subscription(token: str, request: Request, format: str | None = None, db: Se
     group, user = _get_target(db, token)
     if format is None and "text/html" in request.headers.get("accept", "").lower():
         return RedirectResponse(f"{_base_url(request, db)}/s/{quote(token, safe='')}", status_code=302)
+    target = group or user
+    if target.status != "active" and format in {None, "base64", "raw"} and not any(client in request.headers.get("user-agent", "").lower() for client in ("clash", "sing-box", "singbox")):
+        row = status_record(target)
+        headers = _headers(0, target.used_traffic_bytes, target.data_limit_bytes, target.expire_at, row["remark"])
+        _client_metadata(headers, request, db, token)
+        return Response(row["uri"] if format == "raw" else links_to_base64([row]), media_type="text/plain", headers=headers)
     if format == "wireguard":
         from app.models import WireGuardPeer
         from app.services import wireguard
@@ -157,6 +164,8 @@ def subscription(token: str, request: Request, format: str | None = None, db: Se
         )
         _client_metadata(headers, request, db, token)
         user_agent = request.headers.get("user-agent", "").lower()
+        if format in {None, "base64", "raw"}:
+            links = [status_record(group), *links]
         extra = _export_response(members, links, inbounds, nodes, public_host, format, user_agent, headers, dns_links)
         if extra is not None:
             return extra
@@ -182,6 +191,8 @@ def subscription(token: str, request: Request, format: str | None = None, db: Se
 
     inbounds, nodes, public_host = _context(db)
     links = subscription_links(user, inbounds, nodes, public_host)
+    if format in {None, "base64", "raw"}:
+        links = [status_record(user), *links]
     title = f"{get_setting(db, 'panel_title', 'SpecterGate')} - {user.username}"
     user_agent = request.headers.get("user-agent", "").lower()
     wants_clash = format == "clash" or (format is None and "clash" in user_agent)

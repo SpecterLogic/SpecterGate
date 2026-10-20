@@ -222,7 +222,9 @@ def tunnel_runtime(tunnel_id: int, request: Request, db: Session = Depends(get_d
     if tunnel is None:
         raise HTTPException(status_code=404, detail="تونل پیدا نشد.")
     gateway = request.app.state.tunnel_gateway
-    return {"managed_gateway": tunnel.managed_gateway, "listening": tunnel.id in gateway.servers, "error": gateway.errors.get(tunnel.id), "endpoint": f"{tunnel.target_host}:{tunnel.target_port}"}
+    native = request.app.state.dnstt_runtime
+    process = native.processes.get(tunnel.id)
+    return {"managed_gateway": tunnel.managed_gateway, "listening": tunnel.id in gateway.servers, "error": gateway.errors.get(tunnel.id), "endpoint": f"{tunnel.target_host}:{tunnel.target_port}", "server_running": bool(process and process.returncode is None), "dns_listener": bool(native.transport), "dns_error": native.errors.get(tunnel.id) or native.router_error}
 
 
 @router.get("/{tunnel_id}/link/{user_id}")

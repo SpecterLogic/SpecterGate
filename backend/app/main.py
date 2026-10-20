@@ -32,6 +32,7 @@ from app.routers import (
     integrations,
     routing,
     wireguard,
+    backups,
 )
 from app.seed import seed_database
 from app.services import maintenance, xray as xray_service
@@ -50,6 +51,9 @@ async def lifespan(app: FastAPI):
     app.state.tunnel_gateway = TunnelGateway()
     gateway_worker = asyncio.create_task(app.state.tunnel_gateway.run(stop))
     telegram_worker = asyncio.create_task(telegram_bot.run(stop))
+    from app.services.dnstt_runtime import DnsttRuntime
+    app.state.dnstt_runtime = DnsttRuntime()
+    dns_worker = asyncio.create_task(app.state.dnstt_runtime.run(stop))
     try:
         yield
     finally:
@@ -57,6 +61,7 @@ async def lifespan(app: FastAPI):
         await worker
         await gateway_worker
         await telegram_worker
+        await dns_worker
         await asyncio.to_thread(xray_service.stop_process)
 
 
@@ -130,6 +135,7 @@ def create_app() -> FastAPI:
         integrations.router,
         routing.router,
         wireguard.router,
+        backups.router,
     ):
         app.include_router(router, prefix=settings.api_prefix)
 

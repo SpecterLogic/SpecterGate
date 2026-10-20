@@ -39,9 +39,9 @@ import {
 
 function GatewayStatus({ tunnel }: { tunnel: DnsTunnel }) {
   const { admin } = useAuth();
-  const runtime = useQuery({ queryKey: ["gateway-runtime", tunnel.id], queryFn: () => api.get<{ listening: boolean; error: string | null }>(`/api/dns-tunnels/${tunnel.id}/runtime`), enabled: tunnel.managed_gateway && !!admin?.permissions.includes("dns.manage"), refetchInterval: 5000, retry: false });
+  const runtime = useQuery({ queryKey: ["gateway-runtime", tunnel.id], queryFn: () => api.get<{ listening: boolean; error: string | null; server_running: boolean; dns_listener: boolean; dns_error: string | null }>(`/api/dns-tunnels/${tunnel.id}/runtime`), enabled: tunnel.managed_gateway && !!admin?.permissions.includes("dns.manage"), refetchInterval: 5000, retry: false });
   if (!tunnel.managed_gateway) return <small>دروازه خارجی</small>;
-  return <div><Badge tone={runtime.data?.listening ? "success" : "warning"}>{runtime.data?.listening ? "دروازه محلی آماده" : "دروازه محلی در انتظار اجرا"}</Badge>{runtime.data?.error && <p role="alert" className="field-error">{runtime.data.error}</p>}</div>;
+  return <div><Badge tone={runtime.data?.listening ? "success" : "warning"}>{runtime.data?.listening ? "دروازه محلی آماده" : "دروازه محلی در انتظار اجرا"}</Badge><Badge tone={runtime.data?.server_running && runtime.data?.dns_listener ? "success" : "warning"}>{runtime.data?.server_running && runtime.data?.dns_listener ? "سرور DNSTT و DNS فعال" : "سرور DNSTT در انتظار اجرا"}</Badge>{(runtime.data?.error || runtime.data?.dns_error) && <p role="alert" className="field-error">{runtime.data.error || runtime.data.dns_error}</p>}</div>;
 }
 
 interface TunnelForm {

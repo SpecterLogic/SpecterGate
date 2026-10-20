@@ -24,6 +24,8 @@ import type { XrayStatus } from "../lib/types";
 const NAV_ITEMS = [
   { to: "/", label: "داشبورد", icon: LayoutDashboard, end: true },
   { to: "/users", label: "کاربران", icon: Users },
+  { to: "/backups", label: "بکاپ و بازیابی", icon: Boxes },
+  { to: "/routing", label: "مسیریابی Direct / WARP / IPv4", icon: RadioTower },
   { to: "/admins", label: "ادمین‌ها و نمایندگان", icon: CircleUserRound },
   { to: "/plans", label: "پلن‌های فروش", icon: Boxes },
   { to: "/subscriptions", label: "اشتراک‌های گروهی", icon: Users },
@@ -32,12 +34,13 @@ const NAV_ITEMS = [
   { to: "/nodes", label: "نودها", icon: Server },
   { to: "/settings", label: "تنظیمات", icon: Settings },
   { to: "/integrations", label: "ربات و بکاپ", icon: Settings },
-  { to: "/routing", label: "مسیریابی و WARP", icon: RadioTower },
 ];
 
 const TITLES: Record<string, string> = {
   "/": "داشبورد",
   "/users": "مدیریت کاربران",
+  "/backups": "بکاپ و بازیابی",
+  "/routing": "مسیریابی Direct / WARP / IPv4",
   "/admins": "ادمین‌ها و نمایندگان",
   "/plans": "پلن‌های فروش",
   "/subscriptions": "اشتراک‌های گروهی",
@@ -46,7 +49,6 @@ const TITLES: Record<string, string> = {
   "/nodes": "نودها",
   "/settings": "تنظیمات پنل",
   "/integrations": "ربات و بکاپ",
-  "/routing": "مسیریابی و WARP",
 };
 
 export function Brand({ compact = false }: { compact?: boolean }) {
@@ -117,7 +119,7 @@ export default function Layout() {
         <nav className="nav">
           <span className="nav-caption">مدیریت</span>
           {NAV_ITEMS.filter(item => {
-            if (["/integrations", "/routing"].includes(item.to)) return !!admin?.is_owner;
+            if (["/integrations", "/routing", "/backups"].includes(item.to)) return !!admin?.is_owner;
             const permission: Record<string, string> = { "/": "dashboard.read", "/users": "users.read", "/admins": "admins.read", "/plans": "plans.read", "/subscriptions": "subscriptions.read", "/inbounds": "inbounds.read", "/nodes": "nodes.read", "/dns-tunnels": "dns.read", "/settings": "settings.read" };
             return admin?.permissions.includes(permission[item.to]);
           }).map((item) => {

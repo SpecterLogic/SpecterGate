@@ -72,7 +72,11 @@ def test_group_shared_quota_applies_to_clients_and_filter(client, auth, sample_u
         db.commit()
     user = client.get(f"/api/users/{sample_user['id']}", headers=auth).json()
     assert user["status"] == "limited"
-    assert client.get(f"/sub/{sample_user['sub_token']}").status_code == 403
+    import base64
+    response = client.get(f"/sub/{sample_user['sub_token']}")
+    assert response.status_code == 200
+    assert "127.0.0.1:9" in base64.b64decode(response.text).decode()
+    assert sample_user["uuid"] not in base64.b64decode(response.text).decode()
     filtered = client.get("/api/users", headers=auth, params={"status": "limited", "search": sample_user["username"]})
     assert filtered.json()["total"] == 1
     preview = client.get("/api/xray/config", headers=auth).json()["config"]

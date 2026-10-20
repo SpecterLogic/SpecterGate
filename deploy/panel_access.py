@@ -157,6 +157,12 @@ server {{
         proxy_pass http://spectergate_api/api/;
         {proxy_settings}
     }}
+    location ~ ^/{key}/api/backups/(inspect|restore)$ {{
+        client_max_body_size 17m;
+        rewrite ^/{key}(/.*)$ $1 break;
+        proxy_pass http://spectergate_api;
+        {proxy_settings.replace('proxy_read_timeout 90s;', 'proxy_read_timeout 180s;')}
+    }}
     location /{key}/sub/ {{
         proxy_pass http://spectergate_api/sub/;
         {proxy_settings}

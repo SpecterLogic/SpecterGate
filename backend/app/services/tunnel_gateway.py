@@ -14,6 +14,7 @@ from functools import partial
 from sqlalchemy import update
 
 from app.database import SessionLocal
+from app.config import settings
 from app.models import DnsTunnel, VPNUser, TrafficSample
 from app.services.resource_access import tunnel_allowed
 
@@ -46,7 +47,7 @@ def record_usage(tunnel_id: int, user_id: int, password: bytes, upload: int, dow
 
 
 async def resolve_target(host: str, port: int):
-    records = await asyncio.get_running_loop().getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    records = await asyncio.get_running_loop().getaddrinfo(host, port, type=socket.SOCK_STREAM, family=socket.AF_INET if settings.dns_gateway_ipv4_only else socket.AF_UNSPEC)
     for _, _, _, _, address in records:
         ip = ipaddress.ip_address(address[0])
         if ip.is_global and not ip.is_multicast:
