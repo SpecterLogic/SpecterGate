@@ -7,6 +7,7 @@ SpecterGate combines a React interface with a FastAPI backend and Xray-core. It 
 ## Features
 
 - VLESS, VMess, Trojan and Shadowsocks inbounds.
+- Optional native WireGuard IPv4 server with encrypted user keys, config files, QR and quota/expiry reconciliation.
 - RAW/TCP, WebSocket, gRPC, HTTPUpgrade, XHTTP and mKCP transports; TLS and VLESS Reality.
 - Validated advanced TLS/Reality, Sniffing, Sockopt and stream options, subscription ordering and host overrides.
 - Subscription links, QR codes, Base64, raw links, Xray JSON, Clash Meta and Sing-box exports. Export compatibility depends on the selected protocol and transport.
@@ -30,7 +31,7 @@ curl -fsSLo /tmp/spectergate-install.sh https://raw.githubusercontent.com/Specte
 
 Add `--database postgresql` for a local PostgreSQL database, or `--version TAG_OR_COMMIT` to select an existing version. SQLite is the default. The installer generates owner credentials, configures HTTPS and installs the `spectergate` management command. Your domain must point to the server, with TCP ports 80/443 reachable.
 
-`--private-panel` puts management on a dedicated port and random URL path; allow that port in your provider firewall. Use `--panel-port PORT` to select the port. The full private URL is printed during installation. Public subscription paths remain available separately. HTTPS and administrator authentication are still required.
+`--private-panel` puts management on a dedicated port and random URL path; allow that port in your provider firewall. Use `--panel-port PORT` to select the port. Add `--wireguard` to install the optional native WireGuard service (UDP 51820). The full private URL is printed during installation. Public subscription paths remain available separately. HTTPS and administrator authentication are still required.
 
 ```bash
 spectergate status

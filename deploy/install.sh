@@ -7,13 +7,15 @@ DOMAIN=""
 DATABASE="sqlite"
 PRIVATE_PANEL=false
 PANEL_PORT=""
+INSTALL_WIREGUARD=false
 while (($#)); do
   case "$1" in
     --domain) DOMAIN="${2:?Missing domain}"; shift 2 ;;
     --database) DATABASE="${2:?Missing database}"; shift 2 ;;
     --private-panel) PRIVATE_PANEL=true; shift ;;
+    --wireguard) INSTALL_WIREGUARD=true; shift ;;
     --panel-port) PANEL_PORT="${2:?Missing port}"; PRIVATE_PANEL=true; shift 2 ;;
-    --help|-h) echo 'Usage: sudo bash deploy/install.sh --domain panel.example.com [--database sqlite|postgresql] [--private-panel] [--panel-port PORT]'; exit 0 ;;
+    --help|-h) echo 'Usage: sudo bash deploy/install.sh --domain panel.example.com [--database sqlite|postgresql] [--private-panel] [--panel-port PORT] [--wireguard]'; exit 0 ;;
     --*) echo "Unknown option: $1" >&2; exit 1 ;;
     *) [[ -z "$DOMAIN" ]] || { echo 'Unexpected argument.' >&2; exit 1; }; DOMAIN="$1"; shift ;;
   esac
@@ -214,6 +216,9 @@ nginx -t
 systemctl reload nginx
 
 echo "SpecterGate is installed."
+if [[ "$INSTALL_WIREGUARD" == true ]]; then
+  bash "$APP_DIR/deploy/wireguard_install.sh"
+fi
 if [[ "$PRIVATE_PANEL" == true ]]; then
   ACCESS_ARGS=(--domain "$DOMAIN")
   [[ -z "$PANEL_PORT" ]] || ACCESS_ARGS+=(--port "$PANEL_PORT")

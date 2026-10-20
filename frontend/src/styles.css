@@ -4233,3 +4233,7 @@ pre {
 @media (max-width: 640px) { .commerce-form { grid-template-columns: 1fr; } .commerce-page .page-heading { align-items: start; } .commerce-member { flex-wrap: wrap; } }
 .inbound-advanced { border-top: 1px solid var(--border); padding-top: 20px; min-width: 0; }
 .inbound-advanced > .commerce-actions { margin: 16px 0; flex-wrap: wrap; }
+
+.action-menu-portal { position: fixed; inset-inline-end: auto; z-index: 1100; max-height: 250px; overflow-y: auto; }
+.subscription-share { display: flex; flex-direction: column; gap: 18px; align-items: stretch; }
+.subscription-share .qr-frame { align-self: center; background: white; padding: 12px; }

@@ -42,6 +42,18 @@ def new_uuid() -> str:
     return str(uuid_lib.uuid4())
 
 
+class WireGuardPeer(Base):
+    __tablename__ = "wireguard_peers"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("vpn_users.id", ondelete="CASCADE"), unique=True)
+    public_key: Mapped[str] = mapped_column(String(44), unique=True)
+    address: Mapped[str] = mapped_column(String(45), unique=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_rx: Mapped[int] = mapped_column(BigInteger, default=0)
+    last_tx: Mapped[int] = mapped_column(BigInteger, default=0)
+    counter_epoch: Mapped[str] = mapped_column(String(80), default="")
+
+
 class AdminRole(str, enum.Enum):
     superadmin = "superadmin"
     admin = "admin"

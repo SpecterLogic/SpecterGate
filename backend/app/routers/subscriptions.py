@@ -6,7 +6,7 @@ from datetime import timezone
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import Response
+from fastapi.responses import Response, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -125,9 +125,22 @@ def _group_info(group: SubscriptionGroup, base: str, db: Session) -> dict:
 
 @router.get("/sub/{token}", response_class=Response, include_in_schema=False)
 def subscription(token: str, request: Request, format: str | None = None, db: Session = Depends(get_db)):
-    if format not in {None, "base64", "raw", "json", "singbox", "clash", "outline", "dnstt", "noizdns"}:
+    if format not in {None, "base64", "raw", "json", "singbox", "clash", "outline", "dnstt", "noizdns", "wireguard"}:
         raise HTTPException(status_code=422, detail="فرمت اشتراک پشتیبانی نمی‌شود.")
     group, user = _get_target(db, token)
+    if format is None and "text/html" in request.headers.get("accept", "").lower():
+        return RedirectResponse(f"{_base_url(request, db)}/s/{quote(token, safe='')}", status_code=302)
+    if format == "wireguard":
+        from app.models import WireGuardPeer
+        from app.services import wireguard
+        peer = db.query(WireGuardPeer).filter_by(user_id=user.id, is_active=True).first() if user else None
+        if peer is None:
+            raise HTTPException(404, "WireGuard access has not been granted to this user.")
+        try:
+            content = wireguard.client_config(db, peer)
+        except ValueError as error:
+            raise HTTPException(409, str(error)) from None
+        return Response(content, media_type="text/plain", headers={"Content-Disposition": f'attachment; filename="{quote(user.username)}-wg.conf"', "Cache-Control": "no-store"})
     if group:
         if group.status != "active":
             raise HTTPException(status_code=403, detail="اشتراک گروهی فعال نیست.")
@@ -142,6 +155,7 @@ def subscription(token: str, request: Request, format: str | None = None, db: Se
             group.expire_at,
             title,
         )
+        _client_metadata(headers, request, db, token)
         user_agent = request.headers.get("user-agent", "").lower()
         extra = _export_response(members, links, inbounds, nodes, public_host, format, user_agent, headers, dns_links)
         if extra is not None:
@@ -172,6 +186,7 @@ def subscription(token: str, request: Request, format: str | None = None, db: Se
     user_agent = request.headers.get("user-agent", "").lower()
     wants_clash = format == "clash" or (format is None and "clash" in user_agent)
     headers = _headers(user.upload_bytes, user.download_bytes, user.data_limit_bytes, user.expire_at, title)
+    _client_metadata(headers, request, db, token)
     tunnels = db.query(DnsTunnel).filter(DnsTunnel.is_active.is_(True)).all()
     extra = _export_response([user], links, inbounds, nodes, public_host, format, user_agent, headers, dns_links_for_user(user, tunnels))
     if extra is not None:
@@ -187,6 +202,16 @@ def subscription(token: str, request: Request, format: str | None = None, db: Se
         media_type="text/plain; charset=utf-8",
         headers=headers,
     )
+
+
+def _client_metadata(headers, request, db, token):
+    headers["profile-web-page-url"] = f"{_base_url(request, db)}/s/{quote(token, safe='')}"
+    support = str(get_setting(db, "support_url", "") or "").strip()
+    if support and support.isascii() and "\r" not in support and "\n" not in support:
+        headers["support-url"] = support
+    announcement = str(get_setting(db, "announcement", "") or "").strip()
+    if announcement:
+        headers["announce"] = "base64:" + base64.b64encode(announcement.encode()).decode()
 
 
 def _export_response(users, links, inbounds, nodes, host, format, user_agent, headers, dns_links):
@@ -217,6 +242,12 @@ def _export_response(users, links, inbounds, nodes, host, format, user_agent, he
 def subscription_info(token: str, request: Request, db: Session = Depends(get_db)):
     group, user = _get_target(db, token)
     base = _base_url(request, db)
+    formats = _format_urls(base, token)
+    if user:
+        from app.models import WireGuardPeer
+        from app.services import wireguard
+        if user.status == "active" and wireguard.server_status().get("ready") and db.query(WireGuardPeer).filter_by(user_id=user.id, is_active=True).first():
+            formats["wireguard"] = f"{base}/sub/{token}?format=wireguard"
     tunnels = db.query(DnsTunnel).filter(DnsTunnel.is_active.is_(True)).all()
 
     if group:
@@ -245,7 +276,7 @@ def subscription_info(token: str, request: Request, db: Session = Depends(get_db
         subscription_url=f"{base}/sub/{user.sub_token}",
         clash_url=f"{base}/sub/{user.sub_token}?format=clash",
         page_url=f"{base}/s/{user.sub_token}",
-        format_urls=_format_urls(base, user.sub_token),
+        format_urls=formats,
         subscription_type="single",
         max_members=1,
         members=[

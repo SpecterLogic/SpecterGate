@@ -14,6 +14,9 @@ logger = logging.getLogger(__name__)
 
 @xray.serialized
 def reconcile():
+    from app.services import wireguard
+    with SessionLocal() as db:
+        wireguard.reconcile(db)
     if not settings.xray_enabled:
         return
     with SessionLocal() as db:

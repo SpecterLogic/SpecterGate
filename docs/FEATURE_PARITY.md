@@ -8,6 +8,8 @@ This checklist tracks functional coverage against the requested 3x-ui, PasarGuar
 | --- | --- | --- |
 | Users and groups | Time and traffic quotas, shared groups, independent subscription tokens, resource access policies | API tests; local browser workflows |
 | Administration | Owner, administrator hierarchy, scopes, permissions, plan quotas and credits | Permissions and privilege-boundary tests; no automatic sales |
+| Native WireGuard | Optional root companion, IPv4 peers, encrypted user keys, config files and QR, traffic/expiry reconciliation | Separate explicit user grants; requires native Linux service and reachable UDP port |
+| Custom subscription names | Validated unique user slugs, browser-to-page redirect, client quota/expiry and announcement headers | Guessable slugs are bearer links; client metadata display depends on app support |
 | Xray protocols | VLESS, VMess, Trojan, Shadowsocks | Server and exported client configurations checked with pinned Xray |
 | Transports | RAW/TCP, WebSocket, gRPC, HTTPUpgrade, XHTTP, mKCP | mKCP uses Xray JSON; old mKCP header/seed presets are not supported by the pinned core |
 | Security | TLS and VLESS Reality on compatible transports | Real certificates used in TLS configuration tests; Reality native configuration tests |
@@ -31,7 +33,7 @@ This checklist tracks functional coverage against the requested 3x-ui, PasarGuar
 
 | Feature | Current status |
 | --- | --- |
-| Native WireGuard and AmneziaWG inbound servers | Not implemented; WARP outbound is a separate capability |
+| AmneziaWG inbound server | Not implemented; WireGuard and WARP are separate capabilities |
 | OpenVPN server and client profiles | Not implemented |
 | Other protocol families / third-party transports including XDRIVE | Not implemented; must establish engine and client compatibility first |
 | TCP/UDP FinalMask controls | Not implemented |
@@ -46,7 +48,7 @@ This checklist tracks functional coverage against the requested 3x-ui, PasarGuar
 | LDAP, external authentication, MFA | Local authentication only |
 | Email / Discord integration and additional notifications | Not implemented; Telegram scope remains administration and owner backups |
 | Private dashboard URL | Dedicated HTTPS port and random path implemented; authentication remains required |
-| Custom subscription paths and a restart/update management UI | Not implemented; service CLI is available |
+| Restart/update management UI | Service CLI is available |
 | Complete Linux runtime validation | Still requires clean Ubuntu/Debian installation, PostgreSQL backup/restore, real clients and representative networks |
 
 ## Compatibility references

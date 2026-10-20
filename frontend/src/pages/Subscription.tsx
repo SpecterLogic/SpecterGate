@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
 import { QRCodeSVG } from "qrcode.react";
@@ -31,12 +31,24 @@ export default function SubscriptionPage() {
   const [copied, setCopied] = useState<string | null>(null);
   const [format, setFormat] = useState("base64");
   const [qr, setQr] = useState<{ name: string; uri: string } | null>(null);
+  const [nativeConfig, setNativeConfig] = useState<string | null>(null);
 
   const info = useQuery({
     queryKey: ["subscription-info", token],
     queryFn: () => api.get<SubscriptionInfo>(`/sub/${token}/info`),
     retry: false,
   });
+  const nativeUrl = info.data?.format_urls?.wireguard;
+  useEffect(() => {
+    setNativeConfig(null);
+    if (format !== "wireguard" || !nativeUrl) return;
+    const controller = new AbortController();
+    fetch(nativeUrl, { signal: controller.signal }).then(async response => {
+      if (!response.ok) throw new Error("WireGuard config unavailable");
+      setNativeConfig(await response.text());
+    }).catch(error => { if (error.name !== "AbortError") toast.error("دریافت کانفیگ WireGuard ممکن نشد."); });
+    return () => controller.abort();
+  }, [format, nativeUrl]);
 
   async function copy(value: string, key: string) {
     try {
@@ -140,17 +152,17 @@ export default function SubscriptionPage() {
           {isActive ? (
             <div className="sub-qr-card">
               <div className="qr-frame">
-                <QRCodeSVG
-                  value={formatUrl}
+                {format === "wireguard" && !nativeConfig ? <Spinner /> : <QRCodeSVG
+                  value={format === "wireguard" ? nativeConfig! : formatUrl}
                   size={154}
                   bgColor="#ffffff"
                   fgColor="#0b1120"
                   level="M"
                   marginSize={1}
-                />
+                />}
               </div>
               <span>برای افزودن سریع، اسکن کنید</span>
-              <Select aria-label="فرمت اشتراک" value={format} onChange={e => setFormat(e.target.value)}>{Object.entries({ base64: "V2Ray / Base64", raw: "لینک‌های خام", json: "Xray JSON", clash: "Clash Meta", singbox: "Sing-box", outline: "Outline (Shadowsocks)", dnstt: "DNSTT / SlipNet", noizdns: "NoizDNS / SlipNet" }).map(([key, label]) => <option value={key} key={key}>{label}</option>)}</Select>
+              <Select aria-label="فرمت اشتراک" value={format} onChange={e => setFormat(e.target.value)}>{Object.entries({ base64: "V2Ray / Base64", raw: "لینک‌های خام", json: "Xray JSON", clash: "Clash Meta", singbox: "Sing-box", ...(data.format_urls?.wireguard ? { wireguard: "WireGuard IPv4 (.conf)" } : {}), outline: "Outline (Shadowsocks)", dnstt: "DNSTT / SlipNet", noizdns: "NoizDNS / SlipNet" }).map(([key, label]) => <option value={key} key={key}>{label}</option>)}</Select>
               <a href={formatUrl} className="text-link">دریافت فرمت انتخابی</a>
               <button type="button" className="copy-inline" onClick={() => copy(formatUrl, "sub")}>
                 {copied === "sub" ? <Check size={14} /> : <Copy size={14} />}

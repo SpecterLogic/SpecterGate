@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from app.database import get_db
 from app.deps import get_client_ip, require_permission, get_current_admin
@@ -40,6 +41,16 @@ router = APIRouter(prefix="/users", tags=["users"])
 read_access = require_permission("users.read")
 write_access = require_permission("users.write")
 delete_access = require_permission("users.delete")
+
+
+def _subscription_slug(db: Session, value: str | None, user_id: int | None = None) -> str:
+    value = value or secrets.token_urlsafe(24)
+    query = db.query(VPNUser).filter(VPNUser.sub_token == value)
+    if user_id is not None:
+        query = query.filter(VPNUser.id != user_id)
+    if query.first() or db.query(SubscriptionGroup).filter(SubscriptionGroup.token == value).first():
+        raise HTTPException(status_code=409, detail="این نام لینک اشتراک قبلاً استفاده شده است.")
+    return value
 
 
 @router.get("/access-options")
@@ -199,6 +210,7 @@ def create_user(
     group = _group_for_user(db, admin, payload.subscription_id)
 
     data = payload.model_dump()
+    sub_token = _subscription_slug(db, data.pop("subscription_slug", None))
     data.pop("owner_admin_id", None)
     access_data = {key: data.pop(key) for key in ("allowed_inbound_ids", "allowed_dns_tunnel_ids")}
     if plan:
@@ -228,12 +240,16 @@ def create_user(
         **data,
         uuid=new_uuid(),
         password=secrets.token_urlsafe(16),
-        sub_token=secrets.token_urlsafe(24),
+        sub_token=sub_token,
         created_by=target_admin_id,
     )
     apply_resource_access(db, user, access_data, admin)
     db.add(user)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Username or subscription name is already in use.") from None
     db.refresh(user)
     write_audit(
         db,
@@ -273,6 +289,8 @@ def update_user(
         raise HTTPException(status_code=404, detail="کاربر پیدا نشد.")
     ensure_user_access(db, admin, user)
     data = payload.model_dump(exclude_unset=True)
+    if "subscription_slug" in data:
+        data["sub_token"] = _subscription_slug(db, data.pop("subscription_slug"), user.id)
     apply_resource_access(db, user, data, admin)
     if admin.require_template and any(key in data for key in ("data_limit_bytes", "device_limit", "expire_at", "plan_id")):
         raise HTTPException(status_code=403, detail="تغییر مشخصات پلن فقط با عملیات تمدید مجاز است.")
@@ -288,7 +306,11 @@ def update_user(
                 raise HTTPException(status_code=400, detail="ظرفیت اعضای این اشتراک تکمیل شده است.")
     for key, value in data.items():
         setattr(user, key, value)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Username or subscription name is already in use.") from None
     db.refresh(user)
     write_audit(
         db,

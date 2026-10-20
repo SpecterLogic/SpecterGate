@@ -202,6 +202,7 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase, ResourceAccessRequest):
+    subscription_slug: str | None = Field(default=None, min_length=3, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
     is_active: bool = True
     plan_id: int | None = None
     subscription_id: int | None = None
@@ -209,6 +210,7 @@ class UserCreate(UserBase, ResourceAccessRequest):
 
 
 class UserUpdate(ResourceAccessRequest):
+    subscription_slug: str | None = Field(default=None, min_length=3, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
     username: str | None = Field(default=None, min_length=3, max_length=32, pattern=r"^[a-zA-Z0-9_.-]+$")
     email: EmailStr | None = None
     note: str | None = Field(default=None, max_length=1000)

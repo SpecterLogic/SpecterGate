@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import ActionMenu from "../components/ActionMenu";
+import { QRCodeSVG } from "qrcode.react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   CalendarClock,
   Copy,
+  QrCode,
+  ExternalLink,
   Link2Off,
-  MoreHorizontal,
   Pencil,
   Plus,
   Power,
@@ -50,6 +53,7 @@ import {
 } from "../components/UI";
 
 interface UserForm extends ResourcePolicy {
+  subscriptionSlug: string;
   username: string;
   email: string;
   note: string;
@@ -79,6 +83,7 @@ function defaultExpiry(days: number): string {
 
 function emptyForm(settings?: PanelSettings): UserForm {
   return {
+    subscriptionSlug: "",
     username: "",
     email: "",
     note: "",
@@ -94,6 +99,7 @@ function emptyForm(settings?: PanelSettings): UserForm {
 
 function userToForm(user: VPNUser): UserForm {
   return {
+    subscriptionSlug: user.sub_token,
     username: user.username,
     email: user.email ?? "",
     note: user.note ?? "",
@@ -122,6 +128,27 @@ export default function UsersPage() {
   const [form, setForm] = useState<UserForm>(emptyForm());
   const [formError, setFormError] = useState("");
   const [pending, setPending] = useState<PendingAction>(null);
+  const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null);
+  const [wg, setWg] = useState<{ config: string; filename: string } | null>(null);
+
+  async function nativeWireGuard(user: VPNUser, revoke = false) {
+    try {
+      if (revoke) {
+        await api.delete(`/api/wireguard/users/${user.id}`);
+        toast.success("دسترسی WireGuard لغو شد.");
+      } else {
+        setWg(await api.post(`/api/wireguard/users/${user.id}`, {}));
+      }
+    } catch (error) { toast.error(error instanceof Error ? error.message : "خطای WireGuard"); }
+  }
+
+  async function showSubscription(user: VPNUser) {
+    try {
+      setSubscription(await api.get<SubscriptionInfo>(`/sub/${user.sub_token}/info`));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "دریافت اشتراک ممکن نشد.");
+    }
+  }
 
   const settings = useQuery({
     queryKey: ["panel-settings"],
@@ -171,6 +198,7 @@ export default function UsersPage() {
     },
     onSuccess: (user) => {
       toast.success(editing ? "تغییرات کاربر ذخیره شد." : `کاربر ${user.username} ساخته شد.`);
+      if (!editing) void showSubscription(user);
       setModalOpen(false);
       setEditing(null);
       setFormError("");
@@ -263,6 +291,7 @@ export default function UsersPage() {
       allowed_inbound_ids: form.allowed_inbound_ids,
       allowed_dns_tunnel_ids: form.allowed_dns_tunnel_ids,
     };
+    if (form.subscriptionSlug.trim()) payload.subscription_slug = form.subscriptionSlug.trim();
     if (form.planId) {
       payload.plan_id = Number(form.planId);
       if (!editing) { delete payload.data_limit_bytes; delete payload.expire_at; delete payload.device_limit; }
@@ -445,6 +474,7 @@ export default function UsersPage() {
                       </td>
                       <td>
                         <div className="row-actions">
+                          <button type="button" className="icon-btn" title="اشتراک و QR" onClick={() => showSubscription(user)}><QrCode size={18} /></button>
                           <button
                             type="button"
                             className="icon-btn"
@@ -456,11 +486,12 @@ export default function UsersPage() {
                           <button type="button" className="icon-btn" title="ویرایش" onClick={() => openEdit(user)}>
                             <Pencil size={16} />
                           </button>
-                          <details className="action-menu">
-                            <summary className="icon-btn" title="عملیات بیشتر">
-                              <MoreHorizontal size={18} />
-                            </summary>
-                            <div className="action-menu-pop">
+                          <ActionMenu>
+                            {admin?.permissions.includes("settings.manage") && <>
+                              <button type="button" onClick={() => nativeWireGuard(user)}>WireGuard IPv4 / QR</button>
+                              <button type="button" onClick={() => nativeWireGuard(user, true)}>لغو دسترسی WireGuard</button>
+                            </>}
+
                               <button type="button" onClick={() => toggleMutation.mutate(user)}>
                                 <Power size={15} />
                                 {user.is_active ? "غیرفعال کردن" : "فعال کردن"}
@@ -482,8 +513,7 @@ export default function UsersPage() {
                                 <Trash2 size={15} />
                                 حذف کاربر
                               </button>
-                            </div>
-                          </details>
+                            </ActionMenu>
                         </div>
                       </td>
                     </tr>
@@ -530,6 +560,7 @@ export default function UsersPage() {
                     </span>
                   </div>
                   <div className="mobile-user-actions">
+                    <Button size="sm" variant="ghost" icon={<QrCode size={16} />} onClick={() => showSubscription(user)}>اشتراک و QR</Button>
                     <Button
                       size="sm"
                       variant="ghost"
@@ -541,11 +572,12 @@ export default function UsersPage() {
                     <Button size="sm" variant="ghost" icon={<Pencil size={15} />} onClick={() => openEdit(user)}>
                       ویرایش
                     </Button>
-                    <details className="action-menu mobile-action-menu">
-                      <summary className="icon-btn" title="عملیات بیشتر">
-                        <MoreHorizontal size={18} />
-                      </summary>
-                      <div className="action-menu-pop">
+                    <ActionMenu>
+                            {admin?.permissions.includes("settings.manage") && <>
+                              <button type="button" onClick={() => nativeWireGuard(user)}>WireGuard IPv4 / QR</button>
+                              <button type="button" onClick={() => nativeWireGuard(user, true)}>لغو دسترسی WireGuard</button>
+                            </>}
+
                         <button type="button" onClick={() => toggleMutation.mutate(user)}>
                           <Power size={15} />
                           {user.is_active ? "غیرفعال کردن" : "فعال کردن"}
@@ -567,8 +599,7 @@ export default function UsersPage() {
                           <Trash2 size={15} />
                           حذف کاربر
                         </button>
-                      </div>
-                    </details>
+                      </ActionMenu>
                   </div>
                 </div>
               ))}
@@ -612,6 +643,9 @@ export default function UsersPage() {
         }
       >
         <form id="user-form" onSubmit={submitForm} className="form-grid">
+          <Field label="نام دلخواه لینک اشتراک" hint="اختیاری؛ حروف انگلیسی، عدد، خط تیره و زیرخط. نام کوتاه مثل test قابل حدس است؛ برای لینک خصوصی نام طولانی انتخاب کنید.">
+            <Input dir="ltr" value={form.subscriptionSlug} placeholder="خالی = لینک تصادفی امن" minLength={3} maxLength={64} pattern="[a-zA-Z0-9_-]+" onChange={e => setForm({ ...form, subscriptionSlug: e.target.value })} />
+          </Field>
           <ResourceAccessPicker value={form} onChange={policy => setForm(current => ({ ...current, ...policy }))} />
           {!editing && <Field label="پلن فروش" hint="با انتخاب پلن، حجم و مدت و سقف دستگاه از پلن اعمال می‌شود."><Select value={form.planId} onChange={e => setForm(current => ({ ...current, planId: e.target.value }))}><option value="">بدون پلن</option>{plans.data?.filter(p => p.is_active).map(p => <option key={p.id} value={p.id}>{p.name} · {formatNumber(p.price)}</option>)}</Select></Field>}
           <Field label="نام کاربری" hint="فقط حروف انگلیسی، عدد، نقطه، خط تیره و زیرخط">
@@ -715,6 +749,25 @@ export default function UsersPage() {
             </div>
           )}
         </form>
+      </Modal>
+      <Modal open={!!subscription} onClose={() => setSubscription(null)} title="اشتراک و QR کاربر">
+        {subscription && <div className="subscription-share">
+          <div className="qr-frame"><QRCodeSVG value={subscription.subscription_url} size={210} marginSize={2} /></div>
+          <Field label="لینک اشتراک برای برنامه"><Input dir="ltr" readOnly value={subscription.subscription_url} /></Field>
+          <Button icon={<Copy size={16} />} onClick={async () => { try { await navigator.clipboard.writeText(subscription.subscription_url); toast.success("کپی شد."); } catch { toast.error("لینک را از کادر کپی کنید."); } }}>کپی لینک اشتراک</Button>
+          <a className="text-link" href={subscription.page_url} target="_blank" rel="noreferrer"><ExternalLink size={16} /> باز کردن صفحه کاربر، حجم و کانفیگ‌ها</a>
+        </div>}
+      </Modal>
+      <Modal open={!!wg} onClose={() => setWg(null)} title="کانفیگ WireGuard IPv4">
+        {wg && <div className="subscription-share">
+          <div className="qr-frame"><QRCodeSVG value={wg.config} size={240} marginSize={2} /></div>
+          <Textarea dir="ltr" readOnly rows={11} value={wg.config} />
+          <Button onClick={() => {
+            const url = URL.createObjectURL(new Blob([wg.config], { type: "text/plain" }));
+            const a = document.createElement("a"); a.href = url; a.download = wg.filename; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+          }}>دانلود فایل conf برای برنامه WireGuard</Button>
+          <p>این دسترسی جداگانه توسط مدیر اعطا می‌شود. حجم و انقضای همان کاربر روی WireGuard هم اعمال می‌شود.</p>
+        </div>}
       </Modal>
 
       <ConfirmDialog

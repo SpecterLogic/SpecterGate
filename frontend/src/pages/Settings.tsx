@@ -292,7 +292,7 @@ export default function SettingsPage() {
                       dir="ltr"
                     />
                   </Field>
-                  <Field label="پیام اطلاع‌رسانی" hint="در بالای داشبورد و صفحهٔ اشتراک نمایش داده می‌شود.">
+                  <Field label="پیام اطلاع‌رسانی" hint="در صفحهٔ کاربر و هدر announce ساب ارسال می‌شود. نمایش داخل برنامه به پشتیبانی آن بستگی دارد و پس از به‌روزرسانی ساب انجام می‌شود.">
                     <Textarea
                       rows={3}
                       value={form.announcement}

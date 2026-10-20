@@ -31,6 +31,7 @@ from app.routers import (
     xray,
     integrations,
     routing,
+    wireguard,
 )
 from app.seed import seed_database
 from app.services import maintenance, xray as xray_service
@@ -76,7 +77,7 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
-        expose_headers=["subscription-userinfo", "profile-update-interval", "profile-title"],
+        expose_headers=["subscription-userinfo", "profile-update-interval", "profile-title", "profile-web-page-url", "announce", "support-url"],
     )
     allowed_hosts = [value.strip() for value in settings.trusted_hosts.split(",") if value.strip()]
     allowed_hosts.append(settings.public_host)
@@ -128,6 +129,7 @@ def create_app() -> FastAPI:
         agent.router,
         integrations.router,
         routing.router,
+        wireguard.router,
     ):
         app.include_router(router, prefix=settings.api_prefix)
 
