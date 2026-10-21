@@ -34,6 +34,12 @@ from app.routers import (
     wireguard,
     backups,
     security,
+    hosts_dns,
+    amneziawg,
+    ssl_certs,
+    monitoring,
+    diagnostics,
+    protocols,
 )
 from app.seed import seed_database
 from app.services import maintenance, xray as xray_service
@@ -138,6 +144,12 @@ def create_app() -> FastAPI:
         wireguard.router,
         backups.router,
         security.router,
+        hosts_dns.router,
+        amneziawg.router,
+        ssl_certs.router,
+        monitoring.router,
+        diagnostics.router,
+        protocols.router,
     ):
         app.include_router(router, prefix=settings.api_prefix)
 

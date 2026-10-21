@@ -6,7 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 interface AuthContextValue {
   admin: Admin | null;
   loading: boolean;
-  login: (username: string, password: string) => Promise<void>;
+  login: (username: string, password: string, otpCode?: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -35,8 +35,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("spectergate:unauthorized", onUnauthorized);
   }, [queryClient]);
 
-  const login = useCallback(async (username: string, password: string) => {
-    const response = await api.post<Admin>("/api/auth/session", { username, password });
+  const login = useCallback(async (username: string, password: string, otpCode?: string) => {
+    const response = await api.post<Admin>("/api/auth/session", { username, password, otp_code: otpCode || null });
     queryClient.clear();
     setAdmin(response);
   }, [queryClient]);

@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 class LoginRequest(BaseModel):
     username: str = Field(min_length=3, max_length=64)
     password: str = Field(min_length=4, max_length=128)
+    otp_code: str | None = Field(default=None, max_length=16)
 
 
 class AdminOut(BaseModel):
@@ -20,6 +21,7 @@ class AdminOut(BaseModel):
     role: str
     is_owner: bool = False
     is_active: bool
+    totp_enabled: bool = False
     parent_id: int | None = None
     scope: str = "all"
     max_users: int | None = None
@@ -368,6 +370,9 @@ class InboundBase(BaseModel):
     tls_cert_path: str | None = Field(default=None, max_length=512)
     tls_key_path: str | None = Field(default=None, max_length=512)
     is_active: bool = True
+    data_limit_bytes: int | None = Field(default=None, ge=0)
+    expire_at: datetime | None = None
+    reset_interval_days: int | None = Field(default=None, ge=1, le=365)
     extra_json: str | None = None
 
     @field_validator('extra_json')
@@ -408,6 +413,9 @@ class InboundUpdate(BaseModel):
     tls_cert_path: str | None = None
     tls_key_path: str | None = None
     is_active: bool | None = None
+    data_limit_bytes: int | None = Field(default=None, ge=0)
+    expire_at: datetime | None = None
+    reset_interval_days: int | None = Field(default=None, ge=1, le=365)
     extra_json: str | None = None
 
     _advanced_options = field_validator('extra_json')(InboundBase.advanced_options.__func__)
@@ -441,6 +449,12 @@ class InboundOut(BaseModel):
     tls_key_path: str | None
     is_active: bool
     total_bytes: int
+    data_limit_bytes: int | None = None
+    expire_at: datetime | None = None
+    reset_interval_days: int | None = None
+    last_reset_at: datetime | None = None
+    usage_percent: float = 0.0
+    status: str = "active"
     extra_json: str | None = None
     created_at: datetime
 
@@ -449,6 +463,19 @@ class KeyPairOut(BaseModel):
     private_key: str
     public_key: str
     short_id: str
+
+
+class InboundBulkStatus(BaseModel):
+    inbound_ids: list[int] = Field(min_length=1, max_length=500)
+    is_active: bool
+
+
+class InboundBulkReset(BaseModel):
+    inbound_ids: list[int] = Field(min_length=1, max_length=500)
+
+
+class InboundBulkDelete(BaseModel):
+    inbound_ids: list[int] = Field(min_length=1, max_length=500)
 
 
 # ---------- DNS tunnels / DNSTT / NoizDNS ----------
@@ -652,3 +679,20 @@ class AuditLogOut(BaseModel):
     detail: str | None
     ip_address: str | None
     created_at: datetime
+
+
+class TwoFactorSetupOut(BaseModel):
+    secret: str
+    uri: str
+    qr_svg: str
+    recovery_codes: list[str]
+
+
+class TwoFactorEnableRequest(BaseModel):
+    secret: str
+    code: str
+    recovery_codes: list[str]
+
+
+class TwoFactorDisableRequest(BaseModel):
+    password: str

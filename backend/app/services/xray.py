@@ -226,6 +226,7 @@ def generate_config(
         .order_by(Inbound.id.asc())
         .all()
     )
+    inbounds = [ib for ib in inbounds if ib.is_usable]
     users = db.query(VPNUser).order_by(VPNUser.id.asc()).all()
 
     generated: list[dict] = []
@@ -292,6 +293,8 @@ def generate_config(
     client_count = sum(len(item.get("settings", {}).get("clients", [])) for item in generated)
     from app.services.routing import apply_to_xray
     apply_to_xray(db, config, node)
+    from app.services.hosts_dns import apply_dns_to_xray
+    apply_dns_to_xray(db, config, node)
     return config, warnings, inbounds, client_count
 
 

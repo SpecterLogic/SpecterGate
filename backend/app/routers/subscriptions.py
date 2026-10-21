@@ -126,7 +126,7 @@ def _group_info(group: SubscriptionGroup, base: str, db: Session) -> dict:
 
 @router.get("/sub/{token}", response_class=Response, include_in_schema=False)
 def subscription(token: str, request: Request, format: str | None = None, db: Session = Depends(get_db)):
-    if format not in {None, "base64", "raw", "json", "singbox", "clash", "outline", "dnstt", "noizdns", "wireguard"}:
+    if format not in {None, "base64", "raw", "json", "singbox", "clash", "outline", "dnstt", "noizdns", "wireguard", "amneziawg", "awg", "amnezia_vpn", "amnezia"}:
         raise HTTPException(status_code=422, detail="فرمت اشتراک پشتیبانی نمی‌شود.")
     group, user = _get_target(db, token)
     if format is None and "text/html" in request.headers.get("accept", "").lower():
@@ -166,7 +166,7 @@ def subscription(token: str, request: Request, format: str | None = None, db: Se
         user_agent = request.headers.get("user-agent", "").lower()
         if format in {None, "base64", "raw"}:
             links = [status_record(group), *links]
-        extra = _export_response(members, links, inbounds, nodes, public_host, format, user_agent, headers, dns_links)
+        extra = _export_response(members, links, inbounds, nodes, public_host, format, user_agent, headers, dns_links, db)
         if extra is not None:
             return extra
         if format == "clash" or (format is None and "clash" in user_agent):
@@ -199,7 +199,7 @@ def subscription(token: str, request: Request, format: str | None = None, db: Se
     headers = _headers(user.upload_bytes, user.download_bytes, user.data_limit_bytes, user.expire_at, title)
     _client_metadata(headers, request, db, token)
     tunnels = db.query(DnsTunnel).filter(DnsTunnel.is_active.is_(True)).all()
-    extra = _export_response([user], links, inbounds, nodes, public_host, format, user_agent, headers, dns_links_for_user(user, tunnels))
+    extra = _export_response([user], links, inbounds, nodes, public_host, format, user_agent, headers, dns_links_for_user(user, tunnels), db)
     if extra is not None:
         return extra
 
@@ -225,10 +225,27 @@ def _client_metadata(headers, request, db, token):
         headers["announce"] = "base64:" + base64.b64encode(announcement.encode()).decode()
 
 
-def _export_response(users, links, inbounds, nodes, host, format, user_agent, headers, dns_links):
+def _export_response(users, links, inbounds, nodes, host, format, user_agent, headers, dns_links, db=None):
     selected = format
     if selected is None and ("sing-box" in user_agent or "singbox" in user_agent):
         selected = "singbox"
+    if selected in {"amneziawg", "awg"}:
+        from app.services import amneziawg
+        if len(users) == 1:
+            try:
+                conf = amneziawg.client_awg_config(db, users[0], host)
+                headers["content-disposition"] = f"attachment; filename={quote(users[0].username)}_awg.conf"
+                return Response(conf, media_type="text/plain; charset=utf-8", headers=headers)
+            except Exception as e:
+                raise HTTPException(status_code=422, detail=str(e))
+    if selected in {"amnezia_vpn", "amnezia"}:
+        from app.services import amneziawg
+        if len(users) == 1:
+            try:
+                uri = amneziawg.client_amnezia_vpn_uri(db, users[0], host)
+                return Response(uri, media_type="text/plain; charset=utf-8", headers=headers)
+            except Exception as e:
+                raise HTTPException(status_code=422, detail=str(e))
     if selected == "raw":
         return Response("\n".join(link["uri"] for link in links), media_type="text/plain", headers=headers)
     if selected in {"dnstt", "noizdns"}:
@@ -259,6 +276,10 @@ def subscription_info(token: str, request: Request, db: Session = Depends(get_db
         from app.services import wireguard
         if user.status == "active" and wireguard.server_status().get("ready") and db.query(WireGuardPeer).filter_by(user_id=user.id, is_active=True).first():
             formats["wireguard"] = f"{base}/sub/{token}?format=wireguard"
+        from app.services import amneziawg
+        if user.status == "active" and amneziawg.get_amnezia_params(db).enabled:
+            formats["amneziawg"] = f"{base}/sub/{token}?format=amneziawg"
+            formats["amnezia_vpn"] = f"{base}/sub/{token}?format=amnezia_vpn" 
     tunnels = db.query(DnsTunnel).filter(DnsTunnel.is_active.is_(True)).all()
 
     if group:

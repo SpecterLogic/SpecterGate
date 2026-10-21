@@ -2,7 +2,10 @@ import { useMemo, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
+  BarChart3,
   Boxes,
+  Calendar,
+  CheckSquare,
   FileJson,
   Globe2,
   KeyRound,
@@ -12,8 +15,10 @@ import {
   Plus,
   Power,
   RefreshCw,
+  RotateCcw,
   Server,
   Shield,
+  Square,
   Trash2,
   Wand2,
 } from "lucide-react";
@@ -61,6 +66,9 @@ interface InboundForm {
   tlsCertPath: string;
   tlsKeyPath: string;
   isActive: boolean;
+  dataLimitGb: string;
+  expireAt: string;
+  resetIntervalDays: string;
 }
 
 const EMPTY_FORM: InboundForm = {
@@ -87,6 +95,9 @@ const EMPTY_FORM: InboundForm = {
   tlsCertPath: "",
   tlsKeyPath: "",
   isActive: true,
+  dataLimitGb: "",
+  expireAt: "",
+  resetIntervalDays: "",
 };
 
 function inboundToForm(inbound: Inbound): InboundForm {
@@ -114,6 +125,9 @@ function inboundToForm(inbound: Inbound): InboundForm {
     tlsCertPath: inbound.tls_cert_path ?? "",
     tlsKeyPath: inbound.tls_key_path ?? "",
     isActive: inbound.is_active,
+    dataLimitGb: inbound.data_limit_bytes ? String(Math.round((inbound.data_limit_bytes / (1024 * 1024 * 1024)) * 10) / 10) : "",
+    expireAt: inbound.expire_at ? inbound.expire_at.slice(0, 10) : "",
+    resetIntervalDays: inbound.reset_interval_days ? String(inbound.reset_interval_days) : "",
   };
 }
 
@@ -142,6 +156,9 @@ function toPayload(form: InboundForm): Record<string, unknown> {
     tls_cert_path: form.tlsCertPath.trim() || null,
     tls_key_path: form.tlsKeyPath.trim() || null,
     is_active: form.isActive,
+    data_limit_bytes: form.dataLimitGb.trim() ? Math.round(parseFloat(form.dataLimitGb) * 1024 * 1024 * 1024) : null,
+    expire_at: form.expireAt ? new Date(form.expireAt).toISOString() : null,
+    reset_interval_days: form.resetIntervalDays.trim() ? parseInt(form.resetIntervalDays) : null,
   };
 }
 
@@ -160,8 +177,10 @@ export default function InboundsPage() {
   const [form, setForm] = useState<InboundForm>(EMPTY_FORM);
   const [formError, setFormError] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<Inbound | null>(null);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [applyResult, setApplyResult] = useState<XrayApplyResult | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
 
   const inbounds = useQuery({
     queryKey: ["inbounds"],
@@ -208,6 +227,50 @@ export default function InboundsPage() {
     onError: (error: Error) => toast.error(error.message),
   });
 
+  const resetTrafficMutation = useMutation({
+    mutationFn: (inboundId: number) => api.post(`/api/inbounds/${inboundId}/reset-traffic`),
+    onSuccess: () => {
+      toast.success("ترافیک اینباند با موفقیت ریست شد.");
+      queryClient.invalidateQueries({ queryKey: ["inbounds"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const bulkStatusMutation = useMutation({
+    mutationFn: (active: boolean) => api.post("/api/inbounds/bulk/status", { inbound_ids: selectedIds, is_active: active }),
+    onSuccess: () => {
+      toast.success("وضعیت اینباندهای انتخابی به‌روزرسانی شد.");
+      setSelectedIds([]);
+      queryClient.invalidateQueries({ queryKey: ["inbounds"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const bulkResetMutation = useMutation({
+    mutationFn: () => api.post("/api/inbounds/bulk/reset-traffic", { inbound_ids: selectedIds }),
+    onSuccess: () => {
+      toast.success("ترافیک اینباندهای انتخابی ریست شد.");
+      setSelectedIds([]);
+      queryClient.invalidateQueries({ queryKey: ["inbounds"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: () => api.post("/api/inbounds/bulk/delete", { inbound_ids: selectedIds }),
+    onSuccess: () => {
+      toast.success("اینباندهای انتخابی حذف شدند.");
+      setSelectedIds([]);
+      setBulkDeleteOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["inbounds"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
   const deleteMutation = useMutation({
     mutationFn: (inbound: Inbound) => api.delete(`/api/inbounds/${inbound.id}`),
     onSuccess: () => {
@@ -246,6 +309,19 @@ export default function InboundsPage() {
   const localNode = useMemo(() => nodes.data?.find((node) => node.is_local), [nodes.data]);
   const activeCount = inbounds.data?.filter((inbound) => inbound.is_active).length ?? 0;
 
+  function toggleSelect(id: number) {
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]));
+  }
+
+  function selectAll() {
+    if (!inbounds.data) return;
+    if (selectedIds.length === inbounds.data.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(inbounds.data.map((i) => i.id));
+    }
+  }
+
   function openCreate() {
     setEditing(null);
     setForm({ ...EMPTY_FORM, nodeId: localNode ? String(localNode.id) : "" });
@@ -272,7 +348,11 @@ export default function InboundsPage() {
       setFormError("پورت باید بین ۱ تا ۶۵۵۳۵ باشد.");
       return;
     }
-    try { saveMutation.mutate(toPayload(form)); } catch { setFormError("Invalid advanced inbound settings."); }
+    try {
+      saveMutation.mutate(toPayload(form));
+    } catch {
+      setFormError("تنظیمات پیشرفته اینباند نامعتبر است.");
+    }
   }
 
   function changeProtocol(protocol: Protocol) {
@@ -280,7 +360,7 @@ export default function InboundsPage() {
       ...current,
       protocol,
       security: protocol !== "vless" && current.security === "reality" ? "none" : current.security,
-      flow: protocol === "vless" && current.network === "tcp" && current.security !== 'none' ? "xtls-rprx-vision" : "",
+      flow: protocol === "vless" && current.network === "tcp" && current.security !== "none" ? "xtls-rprx-vision" : "",
     }));
   }
 
@@ -288,8 +368,12 @@ export default function InboundsPage() {
     setForm((current) => ({
       ...current,
       network,
-      security: current.security === 'reality' && !['tcp', 'grpc', 'xhttp'].includes(network) ? 'none' : current.security,
-      advanced: JSON.stringify({ ...JSON.parse(current.advanced), ...(network === 'kcp' ? { proxy_protocol: false } : {}), ...(network !== 'tcp' ? { tcp_http_obfuscation: false } : {}) }),
+      security: current.security === "reality" && !["tcp", "grpc", "xhttp"].includes(network) ? "none" : current.security,
+      advanced: JSON.stringify({
+        ...JSON.parse(current.advanced),
+        ...(network === "kcp" ? { proxy_protocol: false } : {}),
+        ...(network !== "tcp" ? { tcp_http_obfuscation: false } : {}),
+      }),
       flow: current.protocol === "vless" && network === "tcp" && current.security === "reality" ? "xtls-rprx-vision" : "",
     }));
   }
@@ -298,7 +382,7 @@ export default function InboundsPage() {
     <div className="inbounds-page">
       <div className="page-intro">
         <div>
-          <p className="eyebrow">لایهٔ انتقال</p>
+          <p className="eyebrow">قابلیت‌های ارتباطی</p>
           <h2>اینباندها و پروتکل‌ها</h2>
           <p className="page-subtitle">
             {formatNumber(activeCount)} مسیر فعال از {formatNumber(inbounds.data?.length ?? 0)} اینباند پیکربندی‌شده.
@@ -320,7 +404,7 @@ export default function InboundsPage() {
             <Play size={18} />
           </span>
           <div>
-            <strong>{xray.data?.running ? "هستهٔ Xray در حال اجرا است" : "هستهٔ Xray اجرا نشده"}</strong>
+            <strong>{xray.data?.running ? "سرویس Xray در حال اجرا است" : "سرویس Xray متوقف است"}</strong>
             <span>{xray.data?.message ?? "در حال دریافت وضعیت..."}</span>
           </div>
         </div>
@@ -339,6 +423,32 @@ export default function InboundsPage() {
           </Button>
         </div>
       </Card>
+
+      {/* Bulk actions bar */}
+      {selectedIds.length > 0 && (
+        <div className="card bulk-actions-bar" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 18px", marginBottom: "16px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <Badge tone="violet">{formatNumber(selectedIds.length)} اینباند انتخاب‌شده</Badge>
+            <Button size="sm" variant="ghost" onClick={() => setSelectedIds([])}>
+              لغو انتخاب
+            </Button>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <Button size="sm" variant="outline" icon={<Power size={14} />} loading={bulkStatusMutation.isPending} onClick={() => bulkStatusMutation.mutate(true)}>
+              فعال‌سازی
+            </Button>
+            <Button size="sm" variant="outline" icon={<Power size={14} />} loading={bulkStatusMutation.isPending} onClick={() => bulkStatusMutation.mutate(false)}>
+              غیرفعال‌سازی
+            </Button>
+            <Button size="sm" variant="outline" icon={<RotateCcw size={14} />} loading={bulkResetMutation.isPending} onClick={() => bulkResetMutation.mutate()}>
+              ریست ترافیک
+            </Button>
+            <Button size="sm" variant="danger" icon={<Trash2 size={14} />} onClick={() => setBulkDeleteOpen(true)}>
+              حذف گروهی
+            </Button>
+          </div>
+        </div>
+      )}
 
       {inbounds.isLoading ? (
         <Card>
@@ -367,91 +477,167 @@ export default function InboundsPage() {
           />
         </Card>
       ) : (
-        <div className="inbound-grid">
-          {inbounds.data?.map((inbound) => (
-            <Card key={inbound.id} className={cn("inbound-card", !inbound.is_active && "is-inactive")}>
-              <div className="inbound-head">
-                <span className={cn("protocol-mark", `protocol-${inbound.protocol}`)}>
-                  {inbound.protocol === "shadowsocks" ? "SS" : inbound.protocol.toUpperCase()}
-                </span>
-                <div className="inbound-title">
-                  <strong>{inbound.remark}</strong>
-                  <span dir="ltr">
-                    {inbound.tag} · :{inbound.port}
-                  </span>
-                </div>
-                <StatusBadge status={inbound.is_active ? "active" : "disabled"} />
-              </div>
+        <>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "8px" }}>
+            <Button variant="ghost" size="sm" icon={selectedIds.length === inbounds.data?.length ? <CheckSquare size={15} /> : <Square size={15} />} onClick={selectAll}>
+              {selectedIds.length === inbounds.data?.length ? "لغو انتخاب همه" : "انتخاب همه"}
+            </Button>
+          </div>
 
-              <div className="inbound-tags">
-                <Badge tone="info">{protocolLabel(inbound.protocol)}</Badge>
-                <Badge tone={inbound.security === "reality" ? "violet" : inbound.security === "tls" ? "success" : "neutral"}>
-                  {inbound.security === "none" ? "بدون رمزنگاری" : inbound.security.toUpperCase()}
-                </Badge>
-                <Badge tone="neutral">{inbound.network}</Badge>
-              </div>
+          <div className="inbound-grid">
+            {inbounds.data?.map((inbound) => {
+              const isSelected = selectedIds.includes(inbound.id);
+              const status = inbound.status || (inbound.is_active ? "active" : "disabled");
+              return (
+                <Card key={inbound.id} className={cn("inbound-card", !inbound.is_active && "is-inactive", isSelected && "border-primary")}>
+                  <div className="inbound-head">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleSelect(inbound.id)}
+                      style={{ cursor: "pointer", width: "16px", height: "16px" }}
+                      aria-label="انتخاب اینباند"
+                    />
+                    <span className={cn("protocol-mark", `protocol-${inbound.protocol}`)}>
+                      {inbound.protocol === "shadowsocks" ? "SS" : inbound.protocol.toUpperCase()}
+                    </span>
+                    <div className="inbound-title">
+                      <strong>{inbound.remark}</strong>
+                      <span dir="ltr">
+                        {inbound.tag} · :{inbound.port}
+                      </span>
+                    </div>
+                    {status === "active" ? (
+                      <Badge tone="success">فعال</Badge>
+                    ) : status === "expired" ? (
+                      <Badge tone="danger">منقضی‌شده</Badge>
+                    ) : status === "limited" ? (
+                      <Badge tone="warning">سقف ترافیک</Badge>
+                    ) : (
+                      <Badge tone="neutral">غیرفعال</Badge>
+                    )}
+                  </div>
 
-              <div className="inbound-specs">
-                <div>
-                  <span>
-                    <Server size={13} /> نود
-                  </span>
-                  <strong>{inbound.node_name ?? "Local"}</strong>
-                </div>
-                <div>
-                  <span>
-                    <Globe2 size={13} /> SNI / Host
-                  </span>
-                  <strong dir="ltr">{inbound.sni || inbound.host || "—"}</strong>
-                </div>
-                <div>
-                  <span>
-                    <Network size={13} /> مسیر
-                  </span>
-                  <strong dir="ltr">{inbound.network === "grpc" ? inbound.service_name : inbound.path || "—"}</strong>
-                </div>
-                <div>
-                  <span>
-                    <Shield size={13} /> مصرف
-                  </span>
-                  <strong>{formatBytes(inbound.total_bytes)}</strong>
-                </div>
-              </div>
+                  <div className="inbound-tags">
+                    <Badge tone="info">{protocolLabel(inbound.protocol)}</Badge>
+                    <Badge tone={inbound.security === "reality" ? "violet" : inbound.security === "tls" ? "success" : "neutral"}>
+                      {inbound.security === "none" ? "بدون امنیت" : inbound.security.toUpperCase()}
+                    </Badge>
+                    <Badge tone="neutral">{inbound.network}</Badge>
+                  </div>
 
-              {inbound.security === "reality" && (
-                <div className="reality-strip" dir="ltr">
-                  <KeyRound size={13} />
-                  <span>{inbound.reality_public_key || "بدون کلید عمومی"}</span>
-                  <span className="short-id">{inbound.reality_short_id}</span>
-                </div>
-              )}
+                  <div className="inbound-specs">
+                    <div>
+                      <span>
+                        <Server size={13} /> نود
+                      </span>
+                      <strong>{inbound.node_name ?? "Local"}</strong>
+                    </div>
+                    <div>
+                      <span>
+                        <Globe2 size={13} /> SNI / Host
+                      </span>
+                      <strong dir="ltr">{inbound.sni || inbound.host || "—"}</strong>
+                    </div>
+                    <div>
+                      <span>
+                        <Network size={13} /> مسیر
+                      </span>
+                      <strong dir="ltr">{inbound.network === "grpc" ? inbound.service_name : inbound.path || "—"}</strong>
+                    </div>
+                    <div>
+                      <span>
+                        <Shield size={13} /> مصرف / سقف
+                      </span>
+                      <strong>
+                        {formatBytes(inbound.total_bytes)}
+                        {inbound.data_limit_bytes ? ` / ${formatBytes(inbound.data_limit_bytes)}` : " (نامحدود)"}
+                      </strong>
+                    </div>
+                  </div>
 
-              <div className="inbound-actions">
-                <Button variant="ghost" size="sm" icon={<Pencil size={15} />} onClick={() => openEdit(inbound)}>
-                  ویرایش
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  icon={<Power size={15} />}
-                  onClick={() => toggleMutation.mutate(inbound)}
-                >
-                  {inbound.is_active ? "غیرفعال" : "فعال"}
-                </Button>
-                <button type="button" className="icon-btn danger-hover" title="حذف" onClick={() => setDeleteTarget(inbound)}>
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            </Card>
-          ))}
-        </div>
+                  {/* Traffic limit progress bar if quota set */}
+                  {inbound.data_limit_bytes && inbound.data_limit_bytes > 0 && (
+                    <div style={{ marginTop: "8px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", color: "var(--color-text-secondary, #9ca3af)", marginBottom: "4px" }}>
+                        <span>درصد مصرف سقف ترافیک</span>
+                        <span>{inbound.usage_percent ?? 0}%</span>
+                      </div>
+                      <div style={{ width: "100%", height: "6px", backgroundColor: "#374151", borderRadius: "3px", overflow: "hidden" }}>
+                        <div
+                          style={{
+                            width: `${Math.min(100, inbound.usage_percent ?? 0)}%`,
+                            height: "100%",
+                            backgroundColor: (inbound.usage_percent ?? 0) >= 90 ? "#ef4444" : (inbound.usage_percent ?? 0) >= 75 ? "#f59e0b" : "#10b981",
+                            transition: "width 0.3s ease",
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Expiration and Reset Info */}
+                  {(inbound.expire_at || inbound.reset_interval_days) && (
+                    <div style={{ display: "flex", gap: "12px", fontSize: "11px", color: "var(--color-text-secondary, #9ca3af)", marginTop: "6px" }}>
+                      {inbound.expire_at && (
+                        <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                          <Calendar size={12} /> انقضا: {new Date(inbound.expire_at).toLocaleDateString("fa-IR")}
+                        </span>
+                      )}
+                      {inbound.reset_interval_days && (
+                        <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                          <RotateCcw size={12} /> ریست خودکار: هر {inbound.reset_interval_days} روز
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {inbound.security === "reality" && (
+                    <div className="reality-strip" dir="ltr">
+                      <KeyRound size={13} />
+                      <span>{inbound.reality_public_key || "بدون کلید عمومی"}</span>
+                      <span className="short-id">{inbound.reality_short_id}</span>
+                    </div>
+                  )}
+
+                  <div className="inbound-actions">
+                    <Button variant="ghost" size="sm" icon={<Pencil size={15} />} onClick={() => openEdit(inbound)}>
+                      ویرایش
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      icon={<Power size={15} />}
+                      onClick={() => toggleMutation.mutate(inbound)}
+                    >
+                      {inbound.is_active ? "غیرفعال" : "فعال"}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      icon={<RotateCcw size={14} />}
+                      title="ریست ترافیک مصرفی اینباند"
+                      onClick={() => resetTrafficMutation.mutate(inbound.id)}
+                    >
+                      ریست
+                    </Button>
+                    <button type="button" className="icon-btn danger-hover" title="حذف" onClick={() => setDeleteTarget(inbound)}>
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        </>
       )}
 
+      {/* Inbound Create / Edit Modal */}
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         title={editing ? `ویرایش ${editing.tag}` : "ساخت اینباند جدید"}
-        description="تنظیمات اتصال را مشخص کنید. تغییرات پس از «اعمال کانفیگ» روی هسته اعمال می‌شوند."
+        description="تنظیمات ارتباطی را مشخص کنید. تغییرات پس از «اعمال کانفیگ» روی هسته اعمال می‌شوند."
         wide
         footer={
           <>
@@ -469,7 +655,7 @@ export default function InboundsPage() {
             <Input
               value={form.remark}
               onChange={(event) => setForm({ ...form, remark: event.target.value })}
-              placeholder="Reality · Frankfurt"
+              placeholder="Reality – Frankfurt"
               required
             />
           </Field>
@@ -532,7 +718,7 @@ export default function InboundsPage() {
               <option value="xhttp">XHTTP</option>
             </Select>
           </Field>
-          <Field label="لایهٔ امنیت">
+          <Field label="لایه امنیتی">
             <Select
               value={form.security}
               onChange={(event) => {
@@ -547,12 +733,46 @@ export default function InboundsPage() {
                 });
               }}
             >
-              <option value="reality" disabled={form.protocol !== "vless" || !['tcp', 'grpc', 'xhttp'].includes(form.network)}>
+              <option value="reality" disabled={form.protocol !== "vless" || !["tcp", "grpc", "xhttp"].includes(form.network)}>
                 Reality
               </option>
               <option value="tls">TLS</option>
-              <option value="none">بدون رمزنگاری</option>
+              <option value="none">بدون امنیت</option>
             </Select>
+          </Field>
+
+          {/* Traffic Limit and Expiration Inputs */}
+          <Field label="سقف حجم اینباند (گیگابایت)" hint="خالی = ترافیک نامحدود">
+            <Input
+              type="number"
+              step="0.5"
+              min="0"
+              value={form.dataLimitGb}
+              onChange={(event) => setForm({ ...form, dataLimitGb: event.target.value })}
+              placeholder="مثلاً ۱۰۰۰ برای ۱ ترابایت"
+              dir="ltr"
+            />
+          </Field>
+
+          <Field label="تاریخ انقضای اینباند" hint="خالی = بدون تاریخ انقضا">
+            <Input
+              type="date"
+              value={form.expireAt}
+              onChange={(event) => setForm({ ...form, expireAt: event.target.value })}
+              dir="ltr"
+            />
+          </Field>
+
+          <Field label="دوره ریست خودکار ترافیک (روز)" hint="مثلاً ۳۰ برای ریست ماهانه، خالی = غیرفعال">
+            <Input
+              type="number"
+              min="1"
+              max="365"
+              value={form.resetIntervalDays}
+              onChange={(event) => setForm({ ...form, resetIntervalDays: event.target.value })}
+              placeholder="مثلاً ۳۰"
+              dir="ltr"
+            />
           </Field>
 
           {form.security !== "none" && (
@@ -585,7 +805,7 @@ export default function InboundsPage() {
                 <div className="key-box-head">
                   <div>
                     <strong>کلیدهای Reality</strong>
-                    <span>اگر خالی بمانند، هنگام ذخیره به‌صورت خودکار ساخته می‌شوند.</span>
+                    <span>اگر خالی بمانند، هنگام ذخیره خودکار تولید می‌شوند.</span>
                   </div>
                   <Button
                     type="button"
@@ -609,7 +829,8 @@ export default function InboundsPage() {
                   </Field>
                   <Field label="Private Key">
                     <Input
-                      type="password" autoComplete="new-password"
+                      type="password"
+                      autoComplete="new-password"
                       value={form.realityPrivateKey}
                       onChange={(event) => setForm({ ...form, realityPrivateKey: event.target.value })}
                       dir="ltr"
@@ -631,7 +852,7 @@ export default function InboundsPage() {
 
           {form.security === "tls" && (
             <>
-              <Field label="گواهی TLS (مسیر)">
+              <Field label="پروانه TLS (مسیر)">
                 <Input
                   value={form.tlsCertPath}
                   onChange={(event) => setForm({ ...form, tlsCertPath: event.target.value })}
@@ -696,11 +917,38 @@ export default function InboundsPage() {
             />
           </div>
 
-          <InboundAdvanced value={form.advanced} onChange={advanced => setForm({ ...form, advanced })} network={form.network} security={form.security} />
+          <InboundAdvanced value={form.advanced} onChange={(advanced) => setForm({ ...form, advanced })} network={form.network} security={form.security} />
           {formError && <div className="form-error field-span-2">{formError}</div>}
         </form>
       </Modal>
 
+      {/* Single Delete Confirm Dialog */}
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onClose={() => setDeleteTarget(null)}
+        title="حذف اینباند"
+        message={`آیا از حذف اینباند «${deleteTarget?.tag}» اطمینان دارید؟ تمام کاربران مرتبط اتصال به این اینباند را از دست خواهند داد.`}
+        confirmLabel="حذف اینباند"
+        danger
+        loading={deleteMutation.isPending}
+        onConfirm={() => {
+          if (deleteTarget) deleteMutation.mutate(deleteTarget);
+        }}
+      />
+
+      {/* Bulk Delete Confirm Dialog */}
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        onClose={() => setBulkDeleteOpen(false)}
+        title="حذف گروهی اینباندها"
+        message={`آیا از حذف تمام ${formatNumber(selectedIds.length)} اینباند انتخاب‌شده اطمینان دارید؟ این عمل غیرقابل بازگشت است.`}
+        confirmLabel="حذف تمام انتخاب‌شده‌ها"
+        danger
+        loading={bulkDeleteMutation.isPending}
+        onConfirm={() => bulkDeleteMutation.mutate()}
+      />
+
+      {/* Xray Config Preview Modal */}
       <Modal
         open={previewOpen}
         onClose={() => setPreviewOpen(false)}
@@ -742,41 +990,29 @@ export default function InboundsPage() {
         )}
       </Modal>
 
-      <Modal
-        open={applyResult !== null}
-        onClose={() => setApplyResult(null)}
-        title={applyResult?.ok ? "کانفیگ با موفقیت اعمال شد" : "کانفیگ نیاز به بررسی دارد"}
-        description={applyResult?.message}
-        wide
-        footer={
-          <Button variant="ghost" onClick={() => setApplyResult(null)}>
-            بستن
-          </Button>
-        }
-      >
-        <div className={cn("apply-result", applyResult?.ok ? "success" : "warning")}>
-          {applyResult?.ok ? <Shield size={22} /> : <AlertTriangle size={22} />}
-          <div>
-            <strong>{formatNumber(applyResult?.inbound_count ?? 0)} اینباند و {formatNumber(applyResult?.client_count ?? 0)} کلاینت</strong>
-            <span dir="ltr">{applyResult?.config_path}</span>
+      {/* Result Dialog after applying config */}
+      {applyResult && (
+        <Modal
+          open={applyResult !== null}
+          onClose={() => setApplyResult(null)}
+          title={applyResult.ok ? "کانفیگ با موفقیت اعمال شد" : "خطا در اعمال کانفیگ"}
+          footer={<Button onClick={() => setApplyResult(null)}>متوجه شدم</Button>}
+        >
+          <div className="apply-result-content">
+            <p>{applyResult.message}</p>
+            {applyResult.warnings && applyResult.warnings.length > 0 && (
+              <div className="apply-warnings">
+                <strong>هشدارها:</strong>
+                <ul>
+                  {applyResult.warnings.map((w, i) => (
+                    <li key={i}>{w}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
-        </div>
-        {applyResult?.validation_output && (
-          <pre className="code-block" dir="ltr">
-            {applyResult.validation_output}
-          </pre>
-        )}
-      </Modal>
-
-      <ConfirmDialog
-        open={deleteTarget !== null}
-        onClose={() => setDeleteTarget(null)}
-        onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget)}
-        title="حذف اینباند"
-        message={`اینباند «${deleteTarget?.remark ?? ""}» حذف می‌شود و لینک‌های اشتراک مرتبط با آن دیگر ساخته نمی‌شوند.`}
-        confirmLabel="حذف قطعی"
-        loading={deleteMutation.isPending}
-      />
+        </Modal>
+      )}
     </div>
   );
 }

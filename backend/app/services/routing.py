@@ -22,7 +22,7 @@ def key32(value):
 
 
 class RoutingRule(BaseModel):
-    outbound: str = Field(pattern=r"^(?:direct|warp|blocked|ipv4|proxy-[a-zA-Z0-9_-]{1,40})$")
+    outbound: str = Field(pattern=r"^(?:direct|warp|blocked|ipv4|proxy-[a-zA-Z0-9_-]{1,40}|balancer-[a-zA-Z0-9_-]{1,40})$")
     domains: list[str] = Field(default_factory=list, max_length=200)
     ips: list[str] = Field(default_factory=list, max_length=200)
     inbound_ids: list[int] = Field(default_factory=list, max_length=200)
@@ -64,6 +64,13 @@ class RoutingRule(BaseModel):
         return self
 
 
+class OutboundBalancer(BaseModel):
+    tag: str = Field(pattern=r"^balancer-[a-zA-Z0-9_-]{1,40}$")
+    name: str = Field(min_length=1, max_length=80)
+    selector: list[str] = Field(min_length=1, max_length=20)
+    strategy: Literal["random", "roundRobin", "leastPing"] = "random"
+
+
 class ProxyOutbound(BaseModel):
     tag: str = Field(pattern=r"^proxy-[a-zA-Z0-9_-]{1,40}$")
     name: str = Field(min_length=1, max_length=80)
@@ -71,6 +78,7 @@ class ProxyOutbound(BaseModel):
     address: str = Field(min_length=1, max_length=253)
     port: int = Field(ge=1, le=65535)
     username: str = Field(default="", max_length=128)
+    chain_proxy: str | None = None
 
     @field_validator("address")
     @classmethod
@@ -89,6 +97,7 @@ class ProxyOutboundUpdate(ProxyOutbound):
 class RoutingConfig(BaseModel):
     default_outbound: str = Field(default="direct", pattern=r"^(?:direct|warp|blocked|ipv4|proxy-[a-zA-Z0-9_-]{1,40})$")
     outbounds: list[ProxyOutbound] = Field(default_factory=list, max_length=20)
+    balancers: list[OutboundBalancer] = Field(default_factory=list, max_length=10)
     domain_strategy: Literal['AsIs', 'IPIfNonMatch', 'IPOnDemand'] = 'AsIs'
     block_bittorrent: bool = False
     block_ips: list[str] = Field(default_factory=list, max_length=200)
@@ -142,7 +151,8 @@ class RoutingConfig(BaseModel):
     def enabled_routes(self):
         tags = [item.tag for item in self.outbounds]
         if len(tags) != len(set(tags)): raise ValueError("Outbound tags must be unique.")
-        available = {"direct", "ipv4", "blocked", "warp", *tags}
+        balancer_tags = [item.tag for item in self.balancers]
+        available = {"direct", "ipv4", "blocked", "warp", *tags, *balancer_tags}
         if self.default_outbound not in available or any(rule.outbound not in available for rule in self.rules):
             raise ValueError("The selected outbound does not exist; update its routing rules first.")
         if self.warp_enabled and not self.warp_public_key:
@@ -218,7 +228,10 @@ def apply_to_xray(db, config, node=None):
             password = get_secret(db, outbound_secret(item.tag, node_id))
             if password is None: raise RuntimeError("Proxy outbound credential unavailable.")
             server["users"] = [{"user": item.username, "pass": password}]
-        config["outbounds"].append({"tag": item.tag, "protocol": item.protocol, "settings": {"servers": [server]}})
+        outbound_dict = {"tag": item.tag, "protocol": item.protocol, "settings": {"servers": [server]}}
+        if item.chain_proxy:
+            outbound_dict["proxySettings"] = {"tag": item.chain_proxy}
+        config["outbounds"].append(outbound_dict)
     if policy.warp_enabled:
         private = get_secret(db, secret)
         if private is None:
@@ -238,8 +251,16 @@ def apply_to_xray(db, config, node=None):
         values = getattr(policy, attribute)
         if values:
             config['routing']['rules'].append({'type': 'field', field: values, 'outboundTag': outbound})
+    if policy.balancers:
+        config["routing"]["balancers"] = [
+            {"tag": b.tag, "selector": b.selector, "strategy": {"type": b.strategy}}
+            for b in policy.balancers
+        ]
     for item in policy.rules:
-        rule = {"type": "field", "outboundTag": item.outbound}
+        if item.outbound.startswith("balancer-"):
+            rule = {"type": "field", "balancerTag": item.outbound}
+        else:
+            rule = {"type": "field", "outboundTag": item.outbound}
         if item.domains:
             rule["domain"] = item.domains
         if item.ips:

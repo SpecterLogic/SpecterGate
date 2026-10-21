@@ -10,6 +10,7 @@ from app.models import ProtectedSetting
 from pydantic import BaseModel, Field
 from fastapi import HTTPException
 from app.services.audit import write_audit
+from app.services.warp_client import register_warp_account
 
 router = APIRouter(prefix="/routing", tags=["routing"])
 
@@ -59,3 +60,28 @@ def update_routing(payload: RoutingUpdate, request: Request, node_id: int | None
     db.commit()
     write_audit(db, actor, "update_routing", "routing", node_id, "تنظیم خروجی‌های Direct/WARP/Block", get_client_ip(request))
     return read_config(db, node_id)
+
+
+@router.post("/warp/auto-register")
+def auto_register_warp(
+    request: Request,
+    node_id: int | None = Query(default=None, ge=1),
+    allow_fallback: bool = Query(default=True),
+    db: Session = Depends(get_db),
+    actor: Admin = Depends(require_permission("routing.manage")),
+):
+    verify_node(db, node_id)
+    result = register_warp_account(allow_fallback=allow_fallback)
+    if not result.get("ok"):
+        raise HTTPException(status_code=502, detail=result.get("message", "ثبت حساب WARP ناموفق بود."))
+
+    write_audit(
+        db,
+        actor,
+        "register_warp",
+        "routing",
+        node_id,
+        "ثبت ۱-کلیکی حساب Cloudflare WARP",
+        get_client_ip(request),
+    )
+    return result

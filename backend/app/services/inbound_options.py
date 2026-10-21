@@ -27,6 +27,9 @@ class TLSOptions(StrictModel):
     rejectUnknownSni: bool = False
     disableSystemRoot: bool = False
     enableSessionResumption: bool = False
+    ech: bool = False
+    echConfig: str = Field(default='', max_length=2000)
+    mldsa65: bool = False
 
     @model_validator(mode='after')
     def versions(self):
@@ -51,6 +54,8 @@ class RealityOptions(StrictModel):
     spiderX: str = Field(default='/', max_length=255, pattern=r'^/')
     limitFallbackUpload: FallbackLimit = Field(default_factory=FallbackLimit)
     limitFallbackDownload: FallbackLimit = Field(default_factory=FallbackLimit)
+    finalMask: bool = False
+    finalMaskConfig: str = Field(default='', max_length=1000)
 
     @field_validator('shortIds')
     @classmethod
@@ -90,7 +95,8 @@ class KCPOptions(StrictModel):
 
 
 class XHTTPOptions(StrictModel):
-    mode: Literal['auto', 'packet-up', 'stream-up', 'stream-one'] = 'auto'
+    mode: Literal['auto', 'packet-up', 'stream-up', 'stream-one', 'x-drive'] = 'auto'
+    xdrive: bool = False
     noGRPCHeader: bool = False
     noSSEHeader: bool = False
     scMaxBufferedPosts: int = Field(default=30, ge=1, le=10000)
@@ -183,6 +189,15 @@ def apply_stream_options(inbound, stream, client=False):
         stream.setdefault('sockopt', {})['acceptProxyProtocol'] = True
     if inbound.security == 'tls':
         tls = advanced.tls.model_dump()
+        if advanced.tls.ech:
+            tls['enableECH'] = True
+            if advanced.tls.echConfig:
+                tls['echConfig'] = advanced.tls.echConfig
+        if advanced.tls.mldsa65:
+            curves = list(advanced.tls.curvePreferences)
+            if 'X25519MLKEM768' not in curves:
+                curves.append('X25519MLKEM768')
+            tls['curvePreferences'] = curves
         if client:
             tls = {k: v for k, v in tls.items() if k not in {'rejectUnknownSni', 'disableSystemRoot', 'enableSessionResumption'}}
         stream.setdefault('tlsSettings', {}).update(tls)
@@ -196,6 +211,10 @@ def apply_stream_options(inbound, stream, client=False):
                 reality['shortId'] = advanced.reality.shortIds[0]
         else:
             values = advanced.reality.model_dump(exclude={'spiderX', 'serverNames', 'shortIds'})
+            if advanced.reality.finalMask:
+                values['finalMask'] = True
+                if advanced.reality.finalMaskConfig:
+                    values['finalMaskConfig'] = advanced.reality.finalMaskConfig
             reality.update(values)
             if advanced.reality.serverNames:
                 reality['serverNames'] = advanced.reality.serverNames

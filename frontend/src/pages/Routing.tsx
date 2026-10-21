@@ -5,6 +5,7 @@ import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useToast } from "../lib/toast";
 import type { Node } from "../lib/types";
+import { Wand2 } from "lucide-react";
 import { Button, Card, Field, Input, Select, Textarea, Toggle, SectionHeader, Spinner } from "../components/UI";
 
 type Outbound = string;
@@ -28,6 +29,36 @@ export default function Routing({ mode = "rules" }: { mode?: "rules" | "warp" })
   const nodes = useQuery({ queryKey: ["nodes"], queryFn: () => api.get<Node[]>("/api/nodes"), enabled: !!admin?.permissions.includes("routing.read") });
   const resources = useQuery({ queryKey: ["resource-options"], queryFn: () => api.get<{ inbounds: { id: number; name: string; tag: string; node_id: number | null }[] }>("/api/users/access-options"), enabled: !!admin?.permissions.includes("routing.read") });
   useEffect(() => { if (result.data) { setPolicy(result.data); setPrivateKey(""); setAddresses(result.data.warp_addresses.join("\n")); setReserved(result.data.warp_reserved.join(",")); } }, [result.data]);
+  const autoRegisterWarp = useMutation({
+    mutationFn: () =>
+      api.post<{
+        ok: boolean;
+        warp_private_key: string;
+        warp_public_key: string;
+        warp_endpoint: string;
+        warp_addresses: string[];
+        warp_reserved: number[];
+        message?: string;
+      }>(`/api/routing/warp/auto-register${suffix}`),
+    onSuccess: (data) => {
+      setPolicy((current) =>
+        current && ({
+          ...current,
+          warp_enabled: true,
+          warp_endpoint: data.warp_endpoint,
+          warp_public_key: data.warp_public_key,
+          warp_addresses: data.warp_addresses,
+          warp_reserved: data.warp_reserved,
+        })
+      );
+      setPrivateKey(data.warp_private_key);
+      setAddresses(data.warp_addresses.join("\n"));
+      setReserved(data.warp_reserved.join(","));
+      toast.success(data.message || "حساب جدید WARP ثبت شد و اطلاعات پر گردید.");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const save = useMutation({ mutationFn: () => api.put(`/api/routing${suffix}`, { ...policy, ...Object.fromEntries(["block_ips", "block_domains", "direct_ips", "direct_domains", "ipv4_domains"].map(key => [key, ((policy as unknown as Record<string, string[]>)[key] || []).map(s => s.trim()).filter(Boolean)])), warp_addresses: split(addresses), warp_reserved: reserved.split(",").map(Number), rules: policy?.rules.map(r => ({ ...r, domains: r.domains.map(s => s.trim()).filter(Boolean), ips: r.ips.map(s => s.trim()).filter(Boolean) })), ...(privateKey ? { warp_private_key: privateKey } : {}) }), onSuccess: () => { setPrivateKey(""); cache.invalidateQueries({ queryKey: ["routing", node] }); toast.success("مسیریابی ذخیره شد؛ در همگام‌سازی بعدی هسته اعمال می‌شود."); }, onError: (e: Error) => toast.error(e.message) });
   function patchRule(index: number, patch: Partial<Rule>) { setPolicy(current => current && ({ ...current, rules: current.rules.map((rule, i) => i === index ? { ...rule, ...patch } : rule) })); }
   if (!admin?.permissions.includes("routing.read")) return <p>این بخش فقط در دسترس مالک پنل است.</p>;
@@ -38,7 +69,7 @@ export default function Routing({ mode = "rules" }: { mode?: "rules" | "warp" })
     <Field label="نود"><Select value={node} onChange={e => { setNode(e.target.value); setPolicy(null); setPrivateKey(""); }}><option value="">سرور محلی</option>{nodes.data?.filter(n => !n.is_local).map(n => <option value={n.id} key={n.id}>{n.name}</option>)}</Select></Field>
     {result.error ? <p role="alert">{result.error.message}</p> : !policy ? <Spinner /> : <form onSubmit={e => { e.preventDefault(); save.mutate(); }}><fieldset className="settings-fieldset" disabled={!canManage}>
       {mode === "warp" && <>
-      <Card className="integration-card"><SectionHeader title="مشخصات حساب WARP" />
+      <Card className="integration-card"><SectionHeader title="مشخصات حساب WARP" action={<Button type="button" variant="outline" size="sm" icon={<Wand2 size={15} />} loading={autoRegisterWarp.isPending} onClick={() => autoRegisterWarp.mutate()}>ثبت خودکار حساب WARP (۱-کلیک)</Button>} />
         <div className="commerce-form">
 
           <Toggle checked={policy.warp_enabled} onChange={warp_enabled => setPolicy({ ...policy, warp_enabled })} label="خروجی WARP فعال" />

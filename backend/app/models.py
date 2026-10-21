@@ -42,6 +42,20 @@ def new_uuid() -> str:
     return str(uuid_lib.uuid4())
 
 
+class SslCertificate(Base):
+    __tablename__ = "ssl_certificates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    domain: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    issuer: Mapped[str] = mapped_column(String(100), default="Let's Encrypt")
+    cert_path: Mapped[str] = mapped_column(String(500))
+    key_path: Mapped[str] = mapped_column(String(500))
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    auto_renew: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
 class WireGuardPeer(Base):
     __tablename__ = "wireguard_peers"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -81,6 +95,9 @@ class Admin(Base):
     require_template: Mapped[bool] = mapped_column(Boolean, default=False)
     permissions_json: Mapped[str | None] = mapped_column(Text)
     allowed_inbound_ids_json: Mapped[str | None] = mapped_column(Text)
+    totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    recovery_codes_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
@@ -332,6 +349,10 @@ class Inbound(Base):
     tls_key_path: Mapped[str | None] = mapped_column(String(512))
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    data_limit_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    expire_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reset_interval_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_reset_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     upload_bytes: Mapped[int] = mapped_column(BigInteger, default=0)
     download_bytes: Mapped[int] = mapped_column(BigInteger, default=0)
     extra_json: Mapped[str | None] = mapped_column(Text)
@@ -345,6 +366,27 @@ class Inbound(Base):
     @property
     def total_bytes(self) -> int:
         return int(self.upload_bytes or 0) + int(self.download_bytes or 0)
+
+    @property
+    def status(self) -> str:
+        if not self.is_active:
+            return "disabled"
+        now = utcnow()
+        if self.expire_at is not None and (as_utc(self.expire_at) or now) <= now:
+            return "expired"
+        if self.data_limit_bytes is not None and self.total_bytes >= self.data_limit_bytes:
+            return "limited"
+        return "active"
+
+    @property
+    def usage_percent(self) -> float:
+        if not self.data_limit_bytes or self.data_limit_bytes <= 0:
+            return 0.0
+        return min(100.0, round(self.total_bytes / self.data_limit_bytes * 100, 1))
+
+    @property
+    def is_usable(self) -> bool:
+        return self.status == "active"
 
 
 class DnsTunnel(Base):

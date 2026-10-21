@@ -14,6 +14,7 @@ from app.services.vault import put_secret, get_secret, has_secret
 from app.services.audit import write_audit
 from app.services.backups import create_backup
 from app.services.telegram_bot import TelegramClient, TelegramError, send_owner_backup
+from app.services.notifications import get_notification_config, send_smtp_email, send_discord_webhook
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 
@@ -177,3 +178,80 @@ def send_backup(request: Request, db: Session = Depends(get_db), actor: Admin = 
         raise HTTPException(status_code=503, detail="ارسال بکاپ انجام نشد؛ تنظیمات ربات و بکاپ را بررسی کنید.") from None
     write_audit(db, actor, "send_owner_backup", "backup", None, "ارسال بکاپ رمزگذاری‌شده به مالک", get_client_ip(request))
     return {"ok": True}
+
+
+class NotificationConfigUpdate(BaseModel):
+    smtp_enabled: bool | None = None
+    smtp_host: str | None = None
+    smtp_port: int | None = Field(default=None, ge=1, le=65535)
+    smtp_username: str | None = None
+    smtp_password: SecretStr | None = None
+    smtp_sender: str | None = None
+    smtp_recipient: str | None = None
+    smtp_use_tls: bool | None = None
+    discord_enabled: bool | None = None
+    discord_webhook_url: SecretStr | None = None
+
+
+@router.get("/notifications")
+def read_notifications(db: Session = Depends(get_db), _: Admin = Depends(owner_only)):
+    return get_notification_config(db)
+
+
+@router.put("/notifications")
+def update_notifications(
+    payload: NotificationConfigUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    actor: Admin = Depends(owner_only),
+):
+    data = payload.model_dump(exclude_unset=True)
+    if "smtp_password" in data and payload.smtp_password:
+        put_secret(db, "smtp_password", payload.smtp_password.get_secret_value())
+        data.pop("smtp_password")
+    if "discord_webhook_url" in data and payload.discord_webhook_url:
+        put_secret(db, "discord_webhook_url", payload.discord_webhook_url.get_secret_value())
+        data.pop("discord_webhook_url")
+
+    for key, value in data.items():
+        if value is not None:
+            set_setting(db, key, value)
+
+    db.commit()
+    write_audit(db, actor, "configure_notifications", "integration", None, "تنظیمات اعلان‌های ایمیل و دیسکورد", get_client_ip(request))
+    return get_notification_config(db)
+
+
+@router.post("/notifications/test-email")
+def test_email(
+    request: Request,
+    db: Session = Depends(get_db),
+    actor: Admin = Depends(owner_only),
+):
+    ok, message = send_smtp_email(
+        db,
+        subject="[SpecterGate] تست ارسال ایمیل",
+        content="این یک ایمیل آزمایشی از پنل مدیریت SpecterGate است. ارتباط سرور SMTP با موفقیت برقرار شد.",
+    )
+    if not ok:
+        raise HTTPException(status_code=502, detail=message)
+    write_audit(db, actor, "test_email", "integration", None, "تست ارسال ایمیل", get_client_ip(request))
+    return {"ok": True, "message": message}
+
+
+@router.post("/notifications/test-discord")
+def test_discord(
+    request: Request,
+    db: Session = Depends(get_db),
+    actor: Admin = Depends(owner_only),
+):
+    ok, message = send_discord_webhook(
+        db,
+        title="تست ارتباط با SpecterGate",
+        description="این یک پیام آزمایشی از سیستم اعلان‌های SpecterGate است. وب‌هوک با موفقیت فعال شد.",
+        color_hex=0x6366F1,
+    )
+    if not ok:
+        raise HTTPException(status_code=502, detail=message)
+    write_audit(db, actor, "test_discord", "integration", None, "تست وب‌هوک دیسکورد", get_client_ip(request))
+    return {"ok": True, "message": message}

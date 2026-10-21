@@ -9,7 +9,9 @@ from app.database import get_db
 from app.config import settings
 from app.deps import get_client_ip, get_current_admin
 from app.models import Admin, AdminSession
-from app.schemas import AdminOut, ChangePasswordRequest, LoginRequest, TokenResponse
+import json
+from app.schemas import AdminOut, ChangePasswordRequest, LoginRequest, TokenResponse, TwoFactorSetupOut, TwoFactorEnableRequest, TwoFactorDisableRequest, OperationResult
+from app.services.totp import create_2fa_setup, verify_totp
 from app.security import create_access_token, hash_password, verify_password, decode_access_token
 from app.services.admin_view import build_admin_out
 from app.services.audit import write_audit
@@ -30,6 +32,28 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="نام کاربری یا رمز عبور نادرست است.",
         )
+    if admin.totp_enabled:
+        if not payload.otp_code:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="2FA_REQUIRED",
+            )
+        totp_valid = verify_totp(admin.totp_secret or "", payload.otp_code)
+        if not totp_valid and admin.recovery_codes_json:
+            codes = json.loads(admin.recovery_codes_json)
+            norm = payload.otp_code.strip().upper().replace("-", "")
+            matched = next((c for c in codes if c.replace("-", "") == norm), None)
+            if matched:
+                codes.remove(matched)
+                admin.recovery_codes_json = json.dumps(codes)
+                totp_valid = True
+        if not totp_valid:
+            failed_login(login_key)
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="کد دومرحله‌ای یا کد بازیابی نامعتبر است.",
+            )
+
     successful_login(login_key)
     admin.last_login_at = datetime.now(timezone.utc)
     db.commit()
@@ -119,3 +143,59 @@ def change_password(
         get_client_ip(request),
     )
     return {"ok": True, "message": "رمز عبور با موفقیت تغییر کرد."}
+
+
+@router.post("/2fa/setup", response_model=TwoFactorSetupOut)
+def setup_2fa(admin: Admin = Depends(get_current_admin)):
+    data = create_2fa_setup(admin.username)
+    return TwoFactorSetupOut(**data)
+
+
+@router.post("/2fa/enable", response_model=OperationResult)
+def enable_2fa(
+    payload: TwoFactorEnableRequest,
+    request: Request,
+    admin: Admin = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    if not verify_totp(payload.secret, payload.code):
+        raise HTTPException(status_code=400, detail="کد تأیید ۶ رقمی نامعتبر است.")
+    admin.totp_secret = payload.secret
+    admin.totp_enabled = True
+    admin.recovery_codes_json = json.dumps(payload.recovery_codes)
+    db.commit()
+    write_audit(
+        db,
+        admin,
+        "enable_2fa",
+        "admin",
+        admin.id,
+        "فعال‌سازی ورود دومرحله‌ای (2FA)",
+        get_client_ip(request),
+    )
+    return OperationResult(ok=True, message="احراز هویت دومرحله‌ای با موفقیت فعال شد.")
+
+
+@router.post("/2fa/disable", response_model=OperationResult)
+def disable_2fa(
+    payload: TwoFactorDisableRequest,
+    request: Request,
+    admin: Admin = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    if not verify_password(payload.password, admin.password_hash):
+        raise HTTPException(status_code=400, detail="رمز عبور فعلی نادرست است.")
+    admin.totp_secret = None
+    admin.totp_enabled = False
+    admin.recovery_codes_json = None
+    db.commit()
+    write_audit(
+        db,
+        admin,
+        "disable_2fa",
+        "admin",
+        admin.id,
+        "غیرفعال‌سازی ورود دومرحله‌ای (2FA)",
+        get_client_ip(request),
+    )
+    return OperationResult(ok=True, message="احراز هویت دومرحله‌ای با موفقیت غیرفعال شد.")

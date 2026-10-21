@@ -13,6 +13,8 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [requires2FA, setRequires2FA] = useState(false);
+  const [otpCode, setOtpCode] = useState("");
 
   useEffect(() => {
     if (admin) navigate("/", { replace: true });
@@ -22,11 +24,16 @@ export default function Login() {
     event.preventDefault();
     setError("");
     setSubmitting(true);
-    try {
-      await login(username.trim(), password);
+        try {
+      await login(username.trim(), password, otpCode.trim() || undefined);
       navigate("/", { replace: true });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "ارتباط با سرور برقرار نشد.");
+      if (err instanceof ApiError && (err.message === "2FA_REQUIRED" || err.status === 403)) {
+        setRequires2FA(true);
+        setError("لطفاً کد ۶ رقمی یا کد بازیابی دومرحله‌ای را وارد کنید.");
+      } else {
+        setError(err instanceof ApiError ? err.message : "اتصال به سرور برقرار نشد.");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -129,6 +136,22 @@ export default function Login() {
                 </button>
               </div>
             </label>
+            {requires2FA && (
+              <label className="login-field">
+                <span>کد تأیید دومرحله‌ای (TOTP یا کد بازیابی)</span>
+                <div className="login-input-wrap">
+                  <ShieldCheck size={18} />
+                  <input
+                    value={otpCode}
+                    onChange={(event) => setOtpCode(event.target.value)}
+                    placeholder="۱۲۳۴۵۶ یا XXXX-XXXX"
+                    autoFocus
+                    required
+                    dir="ltr"
+                  />
+                </div>
+              </label>
+            )}
 
             {error && <div className="login-error">{error}</div>}
 

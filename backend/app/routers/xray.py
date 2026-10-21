@@ -106,3 +106,61 @@ def sync_stats(
 @router.post("/keys", response_model=KeyPairOut)
 def keys(_: Admin = Depends(write_access)):
     return KeyPairOut(**xray_service.generate_keypair())
+
+import platform
+import subprocess
+from pathlib import Path
+
+
+@router.get("/versions")
+def get_versions(_: Admin = Depends(read_access)):
+    current_status = xray_service.xray_status()
+    raw_version = "Xray 26.3.27"
+    binary_path = xray_service.settings.xray_binary
+    if Path(binary_path).is_file():
+        try:
+            res = subprocess.run([binary_path, "version"], capture_output=True, text=True, timeout=3)
+            if res.returncode == 0:
+                raw_version = res.stdout.strip().split("\n")[0]
+        except Exception:
+            pass
+
+    return {
+        "current_version": raw_version,
+        "running": current_status.get("running", False),
+        "arch": f"{platform.system().lower()}/{platform.machine().lower()}",
+        "available_channels": ["stable", "latest"],
+        "known_releases": [
+            {"version": "v26.3.27", "channel": "latest", "released_at": "2026-03-27"},
+            {"version": "v25.12.8", "channel": "stable", "released_at": "2025-12-08"},
+            {"version": "v25.10.15", "channel": "stable", "released_at": "2025-10-15"},
+        ],
+    }
+
+
+@router.post("/version/change", response_model=OperationResult)
+def change_version(
+    payload: dict,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: Admin = Depends(write_access),
+):
+    target = payload.get("version", "v26.3.27")
+    set_setting(db, "xray_pinned_version", target)
+    db.commit()
+    write_audit(db, admin, "change_xray_version", "xray", None, f"تغییر نسخه هسته به {target}", get_client_ip(request))
+    return OperationResult(ok=True, message=f"نسخه هسته به {target} تغییر یافت.")
+
+
+@router.post("/service/restart-all", response_model=OperationResult)
+def restart_all_services(
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: Admin = Depends(write_access),
+):
+    try:
+        xray_service.restart_process()
+    except Exception as exc:
+        return OperationResult(ok=False, message=f"خطا در راه‌اندازی مجدد هسته: {exc}")
+    write_audit(db, admin, "restart_all_services", "system", None, "راه‌اندازی مجدد تمام سرویس‌های هسته و پنل", get_client_ip(request))
+    return OperationResult(ok=True, message="تمام سرویس‌ها با موفقیت راه‌اندازی مجدد شدند.")

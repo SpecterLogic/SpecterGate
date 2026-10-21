@@ -20,6 +20,9 @@ const Backups = lazy(() => import("./pages/Backups"));
 const SecurityPage = lazy(() => import("./pages/Security"));
 const Outbounds = lazy(() => import("./pages/Outbounds"));
 const RoutingPage = lazy(() => import("./pages/Routing"));
+const DnsHostsPage = lazy(() => import("./pages/DnsHosts").then(m => ({ default: m.DnsHosts })));
+const CertificatesPage = lazy(() => import("./pages/Certificates").then(m => ({ default: m.Certificates })));
+const DiagnosticsPage = lazy(() => import("./pages/Diagnostics").then(m => ({ default: m.Diagnostics })));
 
 function PermissionRoute({ permission, children }: { permission: string; children: React.ReactNode }) {
   const { admin } = useAuth();
@@ -90,6 +93,9 @@ export default function App() {
               <Route path="/plans" element={<PermissionRoute permission="plans.read"><Commerce key="plans" mode="plans" /></PermissionRoute>} />
               <Route path="/subscriptions" element={<PermissionRoute permission="subscriptions.read"><Commerce key="subscriptions" mode="subscriptions" /></PermissionRoute>} />
               <Route path="/inbounds" element={<InboundsPage />} />
+              <Route path="/dns-hosts" element={<PermissionRoute permission="dns.read"><DnsHostsPage /></PermissionRoute>} />
+              <Route path="/certificates" element={<PermissionRoute permission="settings.read"><CertificatesPage /></PermissionRoute>} />
+              <Route path="/diagnostics" element={<PermissionRoute permission="routing.read"><DiagnosticsPage /></PermissionRoute>} />
               <Route path="/dns-tunnels" element={<DnsTunnelsPage />} />
               <Route path="/nodes" element={<NodesPage />} />
               <Route path="/settings" element={<SettingsPage />} />

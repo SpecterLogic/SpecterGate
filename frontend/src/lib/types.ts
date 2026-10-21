@@ -22,6 +22,7 @@ export interface Admin {
   role: AdminRole;
   is_owner: boolean;
   is_active: boolean;
+  totp_enabled?: boolean;
   parent_id: number | null;
   scope: "all" | "own" | "none";
   max_users: number | null;
@@ -125,6 +126,12 @@ export interface Inbound {
   tls_cert_path: string | null;
   tls_key_path: string | null;
   is_active: boolean;
+  data_limit_bytes?: number | null;
+  expire_at?: string | null;
+  reset_interval_days?: number | null;
+  last_reset_at?: string | null;
+  usage_percent?: number;
+  status?: "active" | "disabled" | "expired" | "limited";
   total_bytes: number;
   created_at: string;
 }

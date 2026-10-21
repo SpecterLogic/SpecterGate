@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.deps import get_client_ip, require_permission
 from app.models import Admin, Inbound, Node
-from app.schemas import InboundCreate, InboundOut, InboundUpdate, KeyPairOut, OperationResult
+from datetime import datetime, timezone
+from app.schemas import InboundCreate, InboundOut, InboundUpdate, KeyPairOut, OperationResult, InboundBulkStatus, InboundBulkReset, InboundBulkDelete
 from app.services.audit import write_audit
 from app.services.xray import generate_keypair, public_key_for
 from app.services.permissions import has_permission
@@ -192,3 +193,104 @@ def delete_inbound(
         get_client_ip(request),
     )
     return OperationResult(ok=True, message="اینباند حذف شد.")
+
+
+@router.post("/bulk/status", response_model=OperationResult)
+def bulk_status(
+    payload: InboundBulkStatus,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: Admin = Depends(write_access),
+):
+    inbounds = db.query(Inbound).filter(Inbound.id.in_(payload.inbound_ids)).all()
+    for inbound in inbounds:
+        inbound.is_active = payload.is_active
+    db.commit()
+    write_audit(
+        db,
+        admin,
+        "bulk_status_inbound",
+        "inbound",
+        None,
+        f"Bulk status update for {len(inbounds)} inbounds to {payload.is_active}",
+        get_client_ip(request),
+    )
+    return OperationResult(ok=True, message=f"وضعیت {len(inbounds)} اینباند به‌روزرسانی شد.")
+
+
+@router.post("/bulk/reset-traffic", response_model=OperationResult)
+def bulk_reset_traffic(
+    payload: InboundBulkReset,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: Admin = Depends(write_access),
+):
+    now = datetime.now(timezone.utc)
+    inbounds = db.query(Inbound).filter(Inbound.id.in_(payload.inbound_ids)).all()
+    for inbound in inbounds:
+        inbound.upload_bytes = 0
+        inbound.download_bytes = 0
+        inbound.last_reset_at = now
+    db.commit()
+    write_audit(
+        db,
+        admin,
+        "bulk_reset_traffic_inbound",
+        "inbound",
+        None,
+        f"Bulk reset traffic for {len(inbounds)} inbounds",
+        get_client_ip(request),
+    )
+    return OperationResult(ok=True, message=f"ترافیک {len(inbounds)} اینباند ریست شد.")
+
+
+@router.post("/bulk/delete", response_model=OperationResult)
+def bulk_delete(
+    payload: InboundBulkDelete,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: Admin = Depends(write_access),
+):
+    from app.services.resource_access import remove_resource_references
+    inbounds = db.query(Inbound).filter(Inbound.id.in_(payload.inbound_ids)).all()
+    count = len(inbounds)
+    for inbound in inbounds:
+        remove_resource_references(db, inbound.id, "inbound_ids")
+        db.delete(inbound)
+    db.commit()
+    write_audit(
+        db,
+        admin,
+        "bulk_delete_inbound",
+        "inbound",
+        None,
+        f"Bulk delete {count} inbounds",
+        get_client_ip(request),
+    )
+    return OperationResult(ok=True, message=f"{count} اینباند با موفقیت حذف شدند.")
+
+
+@router.post("/{inbound_id}/reset-traffic", response_model=OperationResult)
+def reset_inbound_traffic(
+    inbound_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: Admin = Depends(write_access),
+):
+    inbound = db.get(Inbound, inbound_id)
+    if not inbound:
+        raise HTTPException(status_code=404, detail="اینباند یافت نشد.")
+    inbound.upload_bytes = 0
+    inbound.download_bytes = 0
+    inbound.last_reset_at = datetime.now(timezone.utc)
+    db.commit()
+    write_audit(
+        db,
+        admin,
+        "reset_inbound_traffic",
+        "inbound",
+        inbound_id,
+        f"Reset traffic for inbound {inbound.tag}",
+        get_client_ip(request),
+    )
+    return OperationResult(ok=True, message=f"ترافیک اینباند {inbound.tag} ریست شد.")
