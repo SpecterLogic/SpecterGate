@@ -16,7 +16,7 @@ def test_basic_routing_and_protocol_rules(client, auth, tmp_path):
     assert config['outbounds'][0]['tag'] == 'ipv4'
     assert config['routing']['rules'][0]['ip'] == ['127.0.0.0/8']
     assert config['routing']['rules'][1]['protocol'] == ['bittorrent']
-    assert config['routing']['rules'][-1]['port'] == '25,1000-2000'
+    assert next(rule for rule in config['routing']['rules'] if rule.get('port') == '25,1000-2000')['port'] == '25,1000-2000'
     if os.getenv('XRAY_TEST_BINARY'):
         path = tmp_path / 'routing.json'
         path.write_text(json.dumps(config), encoding='utf-8')

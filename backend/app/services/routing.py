@@ -277,6 +277,9 @@ def apply_to_xray(db, config, node=None):
                 continue
             rule["inboundTag"] = tags
         config["routing"]["rules"].append(rule)
+    fallback = {"type": "field", "network": "tcp,udp"}
+    fallback["balancerTag" if policy.default_outbound.startswith("balancer-") else "outboundTag"] = policy.default_outbound
+    config["routing"]["rules"].append(fallback)
 
 
 def redact_config(config):

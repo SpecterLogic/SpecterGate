@@ -2,6 +2,8 @@
 import asyncio
 import json
 import logging
+import hashlib
+from fastapi import HTTPException
 from pathlib import Path
 
 from app.config import settings
@@ -10,6 +12,34 @@ from app.services import xray
 from app.services.settings import get_setting
 
 logger = logging.getLogger(__name__)
+_certificate_signature = None
+_certificate_reload_pending = False
+
+
+def certificate_changes(db):
+    global _certificate_signature, _certificate_reload_pending
+    from app.models import SslCertificate
+    from app.services.ssl_manager import inspect_certificate
+    for record in db.query(SslCertificate).filter(SslCertificate.is_active.is_(True)).all():
+        try:
+            details = inspect_certificate(Path(record.cert_path).read_text(encoding="utf-8"))
+            record.issued_at, record.expires_at = details["issued_at"], details["expires_at"]
+        except (OSError, ValueError, HTTPException):
+            continue
+    db.commit()
+    values = []
+    for inbound in db.query(Inbound).filter(Inbound.is_active.is_(True), Inbound.security == "tls").all():
+        for path in (inbound.tls_cert_path, inbound.tls_key_path):
+            if path:
+                try:
+                    values.append((path, hashlib.sha256(Path(path).read_bytes()).hexdigest()))
+                except OSError:
+                    values.append((path, "unavailable"))
+    signature = tuple(sorted(values))
+    changed = _certificate_signature is not None and signature != _certificate_signature
+    _certificate_reload_pending = _certificate_reload_pending or changed
+    _certificate_signature = signature
+    return _certificate_reload_pending
 
 
 from datetime import datetime, timezone
@@ -34,9 +64,12 @@ def reconcile_inbounds(db: SessionLocal) -> None:
 
 @xray.serialized
 def reconcile():
-    from app.services import wireguard
+    global _certificate_reload_pending
+    from app.services import wireguard, amnezia_runtime
     with SessionLocal() as db:
+        certificates_changed = certificate_changes(db)
         wireguard.reconcile(db)
+        amnezia_runtime.reconcile(db)
         reconcile_inbounds(db)
     if not settings.xray_enabled:
         return
@@ -46,18 +79,24 @@ def reconcile():
                 result = xray.apply_config(db)
                 if not result['ok']:
                     logger.error('Xray could not restore its validated configuration.')
+                else:
+                    _certificate_reload_pending = False
             return
         xray.sync_stats(db)
+        from app.services.monitoring import refresh_from_core
+        refresh_from_core(db)
         config, *_ = xray.generate_config(db)
         path = Path(settings.xray_config_path)
         try:
             existing = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             existing = {}
-        if xray.config_hash(config) != xray.config_hash(existing):
+        if certificates_changed or xray.config_hash(config) != xray.config_hash(existing):
             result = xray.apply_config(db)
             if not result["ok"]:
                 logger.error("Xray reconciliation failed: %s", result["message"])
+            else:
+                _certificate_reload_pending = False
 
 
 async def run(stop: asyncio.Event):
@@ -67,7 +106,7 @@ async def run(stop: asyncio.Event):
         logger.error('Local core startup reconciliation failed.')
     while not stop.is_set():
         try:
-            await asyncio.wait_for(stop.wait(), timeout=30)
+            await asyncio.wait_for(stop.wait(), timeout=5)
         except TimeoutError:
             try:
                 await asyncio.to_thread(reconcile)

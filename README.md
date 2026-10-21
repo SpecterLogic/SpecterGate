@@ -8,6 +8,10 @@ SpecterGate combines a React interface with a FastAPI backend and Xray-core. It 
 
 - VLESS, VMess, Trojan and Shadowsocks inbounds.
 - Optional native WireGuard IPv4 server with encrypted user keys, config files, QR and quota/expiry reconciliation.
+- Optional native AmneziaWG with separate peers and keys, per-user grants, IPv4 configuration/QR and a root companion for traffic and expiry enforcement.
+- Encrypted TOTP secrets, protected recovery-code hashes and single-use login codes.
+- Hosts/DNS editing, routing diagnostics against the running Xray core, and local online-IP monitoring.
+- Certificate upload plus a separate Linux Certbot worker and renewal hooks.
 - RAW/TCP, WebSocket, gRPC, HTTPUpgrade, XHTTP and mKCP transports; TLS and VLESS Reality.
 - Validated advanced TLS/Reality, Sniffing, Sockopt and stream options, subscription ordering and host overrides.
 - Subscription links, QR codes, Base64, raw links, Xray JSON, Clash Meta and Sing-box exports. Export compatibility depends on the selected protocol and transport.
@@ -20,7 +24,7 @@ SpecterGate combines a React interface with a FastAPI backend and Xray-core. It 
 - Installation-specific Telegram bot: administrator user creation, subscription QR delivery and owner-only encrypted backups.
 - SQLite or PostgreSQL, a quick server installer, Docker Compose, Nginx and systemd deployment.
 
-This project is under active development. Server implementations for AmneziaWG, OpenVPN and other additional protocols are not part of the current release. Automated sales and payment processing are outside the project scope.
+This project is under active development. OpenVPN is not implemented. Native AmneziaWG and certificate management require their Linux services; client and public-network compatibility must be verified for your deployment. Automated sales and payment processing are outside the project scope.
 
 ## Quick server setup
 
@@ -32,7 +36,7 @@ curl -fsSLo /tmp/spectergate-install.sh https://raw.githubusercontent.com/Specte
 
 Add `--database postgresql` for a local PostgreSQL database, or `--version TAG_OR_COMMIT` to select an existing version. SQLite is the default. The installer generates owner credentials, configures HTTPS and installs the `spectergate` management command. Your domain must point to the server, with TCP ports 80/443 reachable.
 
-`--private-panel` puts management on a dedicated port and random URL path; allow that port in your provider firewall. Use `--panel-port PORT` to select the port. Add `--wireguard` to install the optional native WireGuard service (UDP 51820). The full private URL is printed during installation. Public subscription paths remain available separately. HTTPS and administrator authentication are still required.
+`--private-panel` puts management on a dedicated port and random URL path; allow that port in your provider firewall. Use `--panel-port PORT` to select the port. Add `--wireguard` for native WireGuard (UDP 51820), or `--amneziawg` for native AmneziaWG (UDP 51821). The full private URL is printed during installation. Public subscription paths remain available separately. HTTPS and administrator authentication are still required. See the [native services guide](docs/NATIVE_SERVICES_FA.md) for permissions, setup and deployment limits.
 
 ```bash
 spectergate status

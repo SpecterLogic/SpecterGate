@@ -9,15 +9,13 @@ def test_generate_wireguard_keypair():
     assert priv != pub
 
 
-def test_register_warp_account_fallback():
-    # Since test runner cannot reach Cloudflare API, allow_fallback=True returns valid WireGuard config
+def test_register_warp_account_fallback(monkeypatch):
+    def unavailable(*args, **kwargs):
+        raise ConnectionError("Registration unavailable")
+    monkeypatch.setattr("httpx.Client", unavailable)
     result = register_warp_account(allow_fallback=True, timeout_seconds=1.0)
-    assert result["ok"] is True
-    assert result["warp_enabled"] is True
-    assert len(result["warp_private_key"]) == 44
-    assert len(result["warp_public_key"]) == 44
-    assert len(result["warp_reserved"]) == 3
-    assert len(result["warp_addresses"]) >= 1
+    assert result["ok"] is False
+    assert "warp_private_key" not in result
 
 
 def test_register_warp_mocked_success(monkeypatch):
@@ -70,12 +68,7 @@ def test_register_warp_mocked_success(monkeypatch):
     assert result["warp_reserved"] == [0, 0, 0]
 
 
-def test_warp_auto_register_endpoint(client, auth):
+def test_warp_auto_register_endpoint(client, auth, monkeypatch):
+    monkeypatch.setattr("app.routers.routing.register_warp_account", lambda **kwargs: {"ok": False, "message": "Registration unavailable"})
     resp = client.post("/api/routing/warp/auto-register?allow_fallback=true", headers=auth)
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["ok"] is True
-    assert "warp_private_key" in data
-    assert "warp_public_key" in data
-    assert "warp_addresses" in data
-    assert "warp_reserved" in data
+    assert resp.status_code == 502

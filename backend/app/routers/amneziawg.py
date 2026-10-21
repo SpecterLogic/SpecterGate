@@ -18,8 +18,50 @@ from app.services.amneziawg import (
 )
 from app.services.audit import write_audit
 from app.services.permissions import ensure_user_access
+from app.services import amnezia_runtime
 
 router = APIRouter(prefix="/amneziawg", tags=["amneziawg"])
+
+
+@router.get("/status")
+def native_status(admin: Admin = Depends(require_permission("users.read"))):
+    state = amnezia_runtime.server_status()
+    return {"ready": bool(state.get("ready")), "port": state.get("port", 51821), "network": "IPv4"}
+
+
+@router.post("/client/{user_id}/grant")
+def grant_access(user_id: int, request: Request, db: Session = Depends(get_db), admin: Admin = Depends(require_permission("settings.manage"))):
+    user = db.get(VPNUser, user_id)
+    if not user:
+        raise HTTPException(404, "User not found")
+    ensure_user_access(db, admin, user)
+    if user.status != "active":
+        raise HTTPException(409, "User is not active")
+    if not amnezia_runtime.server_status().get("ready"):
+        raise HTTPException(409, "Install the native AmneziaWG service first.")
+    with amnezia_runtime.LOCK:
+        amnezia_runtime.provision(db, user)
+        db.commit()
+        amnezia_runtime.reconcile(db)
+    write_audit(db, admin, "grant_amneziawg", "user", user.id, "Native AWG access granted", get_client_ip(request))
+    return {"ok": True}
+
+
+@router.delete("/client/{user_id}/grant")
+def revoke_access(user_id: int, request: Request, db: Session = Depends(get_db), admin: Admin = Depends(require_permission("settings.manage"))):
+    from app.models import AmneziaPeer
+    user = db.get(VPNUser, user_id)
+    if not user:
+        raise HTTPException(404, "User not found")
+    ensure_user_access(db, admin, user)
+    with amnezia_runtime.LOCK:
+        peer = db.query(AmneziaPeer).filter_by(user_id=user_id).first()
+        if peer:
+            peer.is_active = False
+        db.commit()
+        amnezia_runtime.reconcile(db)
+    write_audit(db, admin, "revoke_amneziawg", "user", user.id, "Native AWG access revoked", get_client_ip(request))
+    return {"ok": True}
 
 
 @router.get("/params", response_model=AmneziaWgParams)
@@ -56,7 +98,10 @@ def randomize_amnezia_params_route(
     admin: Admin = Depends(require_permission("inbounds.manage")),
     db: Session = Depends(get_db),
 ):
-    current = get_amnezia_params(db)
+    try:
+        current = get_amnezia_params(db)
+    except HTTPException:
+        current = None
     randomized = randomize_params(current)
     saved = save_amnezia_params(db, randomized)
     write_audit(

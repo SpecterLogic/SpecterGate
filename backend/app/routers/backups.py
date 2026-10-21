@@ -36,7 +36,8 @@ async def inspect(file: UploadFile = File(), password: str = Form(min_length=16,
 
 @xray.serialized
 def perform_restore(db, data, encrypted, password, payload, owner_id):
-    with wireguard.LOCK:
+    from app.services import amnezia_runtime
+    with wireguard.LOCK, amnezia_runtime.LOCK:
         # An encrypted recovery snapshot exists before the first database change.
         _, rollback = create_backup(password)
         folder = BASE_DIR / "data" / "restore-rollbacks"
@@ -51,6 +52,7 @@ def perform_restore(db, data, encrypted, password, payload, owner_id):
         try:
             xray.stop_process()
             wireguard.reconcile(db)
+            amnezia_runtime.reconcile(db)
         except Exception:
             runtime_warning = True
         return recovery_id, runtime_warning

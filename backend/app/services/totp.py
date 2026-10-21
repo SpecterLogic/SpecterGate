@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import hmac
 import json
@@ -40,12 +41,16 @@ def verify_totp(
     secret: str, token: str, window: int = 1, interval: int = 30, digits: int = 6
 ) -> bool:
     """Verify a TOTP token against a secret within the allowed time drift window."""
-    if not secret or not token or len(token.strip()) != digits:
+    if not secret or not token or len(token.strip()) != digits or not token.strip().isascii():
         return False
     token = token.strip()
     now = int(time.time())
     for w in range(-window, window + 1):
-        if get_totp_token(secret, interval, digits, now + w * interval) == token:
+        try:
+            expected = get_totp_token(secret, interval, digits, now + w * interval)
+        except (ValueError, binascii.Error, struct.error):
+            return False
+        if hmac.compare_digest(expected, token):
             return True
     return False
 

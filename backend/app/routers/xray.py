@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -145,11 +145,7 @@ def change_version(
     db: Session = Depends(get_db),
     admin: Admin = Depends(write_access),
 ):
-    target = payload.get("version", "v26.3.27")
-    set_setting(db, "xray_pinned_version", target)
-    db.commit()
-    write_audit(db, admin, "change_xray_version", "xray", None, f"تغییر نسخه هسته به {target}", get_client_ip(request))
-    return OperationResult(ok=True, message=f"نسخه هسته به {target} تغییر یافت.")
+    raise HTTPException(501, "تغییر باینری هسته از پنل هنوز پیاده‌سازی نشده است؛ نسخه با ذخیرهٔ یک تنظیم تغییر نمی‌کند.")
 
 
 @router.post("/service/restart-all", response_model=OperationResult)
@@ -162,5 +158,5 @@ def restart_all_services(
         xray_service.restart_process()
     except Exception as exc:
         return OperationResult(ok=False, message=f"خطا در راه‌اندازی مجدد هسته: {exc}")
-    write_audit(db, admin, "restart_all_services", "system", None, "راه‌اندازی مجدد تمام سرویس‌های هسته و پنل", get_client_ip(request))
-    return OperationResult(ok=True, message="تمام سرویس‌ها با موفقیت راه‌اندازی مجدد شدند.")
+    write_audit(db, admin, "restart_xray", "xray", None, "راه‌اندازی مجدد هستهٔ محلی Xray", get_client_ip(request))
+    return OperationResult(ok=True, message="هستهٔ محلی Xray راه‌اندازی مجدد شد.")

@@ -10,3 +10,6 @@ python-multipart>=0.0.12
 psycopg[binary]>=3.2,<4.0
 qrcode[pil]>=8.2,<9
 tzdata>=2025.1
+grpcio>=1.84,<2
+protobuf>=7.35.1,<8
+httpx>=0.28,<1

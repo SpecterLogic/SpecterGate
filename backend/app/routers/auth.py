@@ -8,8 +8,10 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.config import settings
 from app.deps import get_client_ip, get_current_admin
-from app.models import Admin, AdminSession
+from app.models import Admin, AdminSession, ProtectedSetting
 import json
+import time
+from app.services import two_factor, vault
 from app.schemas import AdminOut, ChangePasswordRequest, LoginRequest, TokenResponse, TwoFactorSetupOut, TwoFactorEnableRequest, TwoFactorDisableRequest, OperationResult
 from app.services.totp import create_2fa_setup, verify_totp
 from app.security import create_access_token, hash_password, verify_password, decode_access_token
@@ -38,15 +40,7 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="2FA_REQUIRED",
             )
-        totp_valid = verify_totp(admin.totp_secret or "", payload.otp_code)
-        if not totp_valid and admin.recovery_codes_json:
-            codes = json.loads(admin.recovery_codes_json)
-            norm = payload.otp_code.strip().upper().replace("-", "")
-            matched = next((c for c in codes if c.replace("-", "") == norm), None)
-            if matched:
-                codes.remove(matched)
-                admin.recovery_codes_json = json.dumps(codes)
-                totp_valid = True
+        totp_valid = two_factor.consume(db, admin, payload.otp_code)
         if not totp_valid:
             failed_login(login_key)
             raise HTTPException(
@@ -146,8 +140,12 @@ def change_password(
 
 
 @router.post("/2fa/setup", response_model=TwoFactorSetupOut)
-def setup_2fa(admin: Admin = Depends(get_current_admin)):
+def setup_2fa(admin: Admin = Depends(get_current_admin), db: Session = Depends(get_db)):
+    if admin.totp_enabled:
+        raise HTTPException(409, "2FA is already enabled.")
     data = create_2fa_setup(admin.username)
+    vault.put_secret(db, f"totp_pending_{admin.id}", json.dumps({**data, "expires": time.time() + 600}))
+    db.commit()
     return TwoFactorSetupOut(**data)
 
 
@@ -158,11 +156,19 @@ def enable_2fa(
     admin: Admin = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
+    if admin.totp_enabled:
+        raise HTTPException(status_code=409, detail="ورود دومرحله‌ای از قبل فعال است؛ ابتدا آن را با تأیید رمز عبور غیرفعال کنید.")
+    pending = json.loads(vault.get_secret(db, f"totp_pending_{admin.id}") or "{}")
+    if pending.get("secret") != payload.secret or pending.get("recovery_codes") != payload.recovery_codes or pending.get("expires", 0) < time.time():
+        raise HTTPException(400, "2FA setup expired or does not match this account.")
     if not verify_totp(payload.secret, payload.code):
         raise HTTPException(status_code=400, detail="کد تأیید ۶ رقمی نامعتبر است.")
-    admin.totp_secret = payload.secret
+    vault.put_secret(db, f"totp_{admin.id}", payload.secret)
+    admin.totp_secret = f"vault:{admin.id}"
     admin.totp_enabled = True
-    admin.recovery_codes_json = json.dumps(payload.recovery_codes)
+    admin.recovery_codes_json = json.dumps([two_factor.code_hash(admin.id, code) for code in pending["recovery_codes"]])
+    db.delete(db.get(ProtectedSetting, f"totp_pending_{admin.id}"))
+    db.query(AdminSession).filter(AdminSession.admin_id == admin.id).delete()
     db.commit()
     write_audit(
         db,
@@ -188,6 +194,8 @@ def disable_2fa(
     admin.totp_secret = None
     admin.totp_enabled = False
     admin.recovery_codes_json = None
+    two_factor.clear(db, admin)
+    db.query(AdminSession).filter(AdminSession.admin_id == admin.id).delete()
     db.commit()
     write_audit(
         db,

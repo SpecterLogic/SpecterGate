@@ -31,6 +31,8 @@ const NAV_ITEMS = [
   { to: "/subscriptions", label: "اشتراک‌های گروهی", icon: Users, group: "کاربران و اشتراک‌ها" },
   { to: "/plans", label: "پلن‌ها", icon: Boxes, group: "کاربران و اشتراک‌ها" },
   { to: "/inbounds", label: "ورودی‌ها (Inbounds)", icon: Boxes, group: "شبکه" },
+  { to: "/amneziawg", label: "AmneziaWG", icon: ShieldCheck, group: "شبکه" },
+  { to: "/sessions", label: "IPهای آنلاین", icon: Activity, group: "کاربران و اشتراک‌ها" },
   { to: "/outbounds", label: "خروجی‌ها (Outbounds)", icon: Server, group: "شبکه" },
   { to: "/routing", label: "قوانین مسیریابی", icon: RadioTower, group: "شبکه" },
   { to: "/dns-hosts", label: "هاست‌ها و DNS", icon: Globe, group: "شبکه" },
@@ -66,6 +68,8 @@ const TITLES: Record<string, string> = {
   "/plans": "پلن‌های فروش",
   "/subscriptions": "اشتراک‌های گروهی",
   "/inbounds": "اینباندها",
+  "/amneziawg": "AmneziaWG",
+  "/sessions": "IPهای آنلاین",
   "/dns-tunnels": "تونل‌های DNS",
   "/nodes": "نودها",
   "/settings": "تنظیمات پنل",
@@ -116,7 +120,7 @@ export default function Layout() {
   const visibleItems = NAV_ITEMS.filter(item => {
     if (item.to === "/account") return true;
     if (["/integrations", "/backups"].includes(item.to)) return !!admin?.is_owner;
-    const permissions: Record<string, string> = { "/": "dashboard.read", "/users": "users.read", "/admins": "admins.read", "/plans": "plans.read", "/subscriptions": "subscriptions.read", "/inbounds": "inbounds.read", "/outbounds": "routing.read", "/routing": "routing.read", "/security": "security.read", "/nodes": "nodes.read", "/dns-tunnels": "dns.read", "/settings": "settings.read", "/core": "xray.manage", "/activity": "audit.read" };
+    const permissions: Record<string, string> = { "/": "dashboard.read", "/users": "users.read", "/admins": "admins.read", "/plans": "plans.read", "/subscriptions": "subscriptions.read", "/inbounds": "inbounds.read", "/amneziawg": "users.read", "/sessions": "users.read", "/dns-hosts": "dns.read", "/certificates": "settings.read", "/diagnostics": "routing.read", "/outbounds": "routing.read", "/routing": "routing.read", "/security": "security.read", "/nodes": "nodes.read", "/dns-tunnels": "dns.read", "/settings": "settings.read", "/core": "xray.manage", "/activity": "audit.read" };
     return admin?.permissions.includes(permissions[item.to]);
   });
 

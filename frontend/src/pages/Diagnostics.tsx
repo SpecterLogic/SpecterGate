@@ -38,6 +38,8 @@ export function Diagnostics() {
   const [routeIp, setRouteIp] = useState("");
   const [routePort, setRoutePort] = useState("443");
   const [routeNetwork, setRouteNetwork] = useState<"tcp" | "udp">("tcp");
+  const [inboundTag, setInboundTag] = useState("");
+  const [protocol, setProtocol] = useState("");
   const [routeResult, setRouteResult] = useState<TestRouteResult | null>(null);
 
   // Ping state
@@ -128,7 +130,7 @@ export function Diagnostics() {
         <div>
           <h1 className="page-title">ابزار عیب‌یابی و بالانسر خروجی</h1>
           <p className="page-subtitle">
-            شبیه‌سازی مسیر واقعی هسته، بررسی پینگ و اتصال به مقاصد خارجی و مدیریت استخرهای بالانسر (Outbound Balancers)
+            بررسی مسیر با هستهٔ محلیِ در حال اجرا، تست اتصال TCP مستقیم و مدیریت بالانسر خروجی
           </p>
         </div>
       </div>
@@ -138,7 +140,7 @@ export function Diagnostics() {
         <Card>
           <SectionHeader
             title="تست مسیر و مسیریابی واقعی (Routing Path)"
-            subtitle="بررسی این که ترافیک مقصد بر اساس قوانین از کدام Outbound عبور می‌کند"
+              subtitle="نتیجه از قواعد اعمال‌شدهٔ هسته دریافت می‌شود؛ آزمون اتصال انتها‌به‌انتها نیست. ابتدا تنظیمات را روی هسته اعمال کنید."
           />
 
           <form
@@ -149,10 +151,13 @@ export function Diagnostics() {
                 target_ip: routeIp.trim() || undefined,
                 target_port: routePort ? Number(routePort) : undefined,
                 network: routeNetwork,
+                inbound_tag: inboundTag.trim() || undefined,
+                protocol: protocol || undefined,
               });
             }}
             className="space-y-4"
           >
+            <div className="form-grid"><Field label="تگ ورودی (اختیاری)"><Input dir="ltr" value={inboundTag} onChange={e => setInboundTag(e.target.value)} /></Field><Field label="پروتکل تشخیص‌داده‌شده (اختیاری)"><Select value={protocol} onChange={e => setProtocol(e.target.value)}><option value="">مشخص نشده</option>{["http", "tls", "quic", "bittorrent"].map(value => <option key={value} value={value}>{value}</option>)}</Select></Field></div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label="دامنه هدف">
                 <Input

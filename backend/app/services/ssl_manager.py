@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
-import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -20,7 +20,10 @@ CERTS_DIR = BASE_DIR / "data" / "certs"
 
 def _clean_domain(domain: str) -> str:
     domain = domain.strip().lower()
-    if not domain or "/" in domain or "\\" in domain or ".." in domain or len(domain) > 255:
+    if len(domain) > 253 or not all(
+        re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label)
+        for label in domain.split(".")
+    ):
         raise HTTPException(status_code=400, detail="نام دامنه نامعتبر است.")
     return domain
 
@@ -90,16 +93,16 @@ def save_uploaded_certificate(
     details = inspect_certificate(cert_pem)
 
     dest_dir = CERTS_DIR / domain
-    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     cert_path = dest_dir / "fullchain.pem"
     key_path = dest_dir / "privkey.pem"
 
     cert_path.write_text(cert_pem.strip() + "\n", encoding="utf-8")
-    key_path.write_text(key_pem.strip() + "\n", encoding="utf-8")
-    try:
+    # Restrict the descriptor before writing any private key bytes.
+    descriptor = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
         os.chmod(key_path, 0o600)
-    except Exception:
-        pass
+        stream.write(key_pem.strip() + "\n")
 
     record = db.query(SslCertificate).filter_by(domain=domain).first()
     if not record:
@@ -111,7 +114,7 @@ def save_uploaded_certificate(
     record.key_path = str(key_path.resolve())
     record.issued_at = details["issued_at"]
     record.expires_at = details["expires_at"]
-    record.auto_renew = auto_renew
+    record.auto_renew = False  # Uploaded files have no Certbot renewal lineage.
     record.is_active = True
     db.commit()
     db.refresh(record)
@@ -157,56 +160,30 @@ def issue_letsencrypt_certificate(
     email: str | None = None,
 ) -> SslCertificate:
     domain = _clean_domain(domain)
-    certbot = shutil.which("certbot")
-
-    if certbot:
-        cmd = [
-            certbot,
-            "certonly",
-            "--standalone",
-            "--non-interactive",
-            "--agree-tos",
-            "-d",
-            domain,
-        ]
-        if email:
-            cmd.extend(["-m", email])
-        else:
-            cmd.append("--register-unsafely-without-email")
-
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
-        if result.returncode != 0:
-            raise HTTPException(
-                status_code=500,
-                detail=f"صدور گواهی Let's Encrypt با خطا مواجه شد. اطمینان حاصل کنید پورت 80 باز است و رکورد DNS به این سرور متصل است: {result.stderr or result.stdout}",
-            )
-
-        live_dir = Path(f"/etc/letsencrypt/live/{domain}")
-        cert_path = live_dir / "fullchain.pem"
-        key_path = live_dir / "privkey.pem"
-        if not cert_path.exists():
-            raise HTTPException(status_code=500, detail="فایل‌های گواهی صادرشده یافت نشدند.")
-
+    from app.services.ssl_worker import issue
+    try:
+        result = issue(domain, email)
+        cert_path = Path(result["cert_path"])
+        key_path = Path(result["key_path"])
+        expected = Path("/var/lib/spectergate-certificates") / domain
+        if cert_path.parent != expected or key_path.parent != expected:
+            raise ValueError("Unexpected certificate path")
         cert_pem = cert_path.read_text(encoding="utf-8")
+        validate_key_matches_cert(cert_pem, key_path.read_text(encoding="utf-8"))
         details = inspect_certificate(cert_pem)
-        record = db.query(SslCertificate).filter_by(domain=domain).first()
-        if not record:
-            record = SslCertificate(domain=domain)
-            db.add(record)
-        record.issuer = "Let's Encrypt"
-        record.cert_path = str(cert_path)
-        record.key_path = str(key_path)
-        record.issued_at = details["issued_at"]
-        record.expires_at = details["expires_at"]
-        record.auto_renew = True
-        record.is_active = True
-        db.commit()
-        db.refresh(record)
-        return record
-    else:
-        # Fallback in environments without certbot (e.g. testing / local development)
-        cert_pem, key_pem = generate_self_signed_cert(domain)
-        return save_uploaded_certificate(db, domain, cert_pem, key_pem, auto_renew=False)
+    except (RuntimeError, OSError, KeyError, ValueError):
+        raise HTTPException(503, "Certificate worker unavailable or issuance failed; install deploy/ssl_install.sh and check DNS/TCP 80.") from None
+    record = db.query(SslCertificate).filter_by(domain=domain).first()
+    if not record:
+        record = SslCertificate(domain=domain)
+        db.add(record)
+    record.issuer = "Let's Encrypt"
+    record.cert_path, record.key_path = str(cert_path), str(key_path)
+    record.issued_at, record.expires_at = details["issued_at"], details["expires_at"]
+    record.auto_renew, record.is_active = True, True
+    db.commit()
+    db.refresh(record)
+    return record
 
 
 def delete_certificate(db: Session, cert_id: int) -> bool:

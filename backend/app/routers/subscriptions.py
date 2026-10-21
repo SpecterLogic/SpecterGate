@@ -277,7 +277,9 @@ def subscription_info(token: str, request: Request, db: Session = Depends(get_db
         if user.status == "active" and wireguard.server_status().get("ready") and db.query(WireGuardPeer).filter_by(user_id=user.id, is_active=True).first():
             formats["wireguard"] = f"{base}/sub/{token}?format=wireguard"
         from app.services import amneziawg
-        if user.status == "active" and amneziawg.get_amnezia_params(db).enabled:
+        from app.services import amnezia_runtime
+        from app.models import AmneziaPeer
+        if user.status == "active" and amnezia_runtime.server_status().get("ready") and amneziawg.get_amnezia_params(db).enabled and db.query(AmneziaPeer).filter_by(user_id=user.id, is_active=True).first():
             formats["amneziawg"] = f"{base}/sub/{token}?format=amneziawg"
             formats["amnezia_vpn"] = f"{base}/sub/{token}?format=amnezia_vpn" 
     tunnels = db.query(DnsTunnel).filter(DnsTunnel.is_active.is_(True)).all()

@@ -1,8 +1,27 @@
 import json
 import pytest
 from app.database import SessionLocal
-from app.models import VPNUser
+from app.models import VPNUser, AmneziaPeer, WireGuardPeer
+from app.services import amnezia_runtime
+import base64
 from app.services.amneziawg import get_amnezia_params, save_amnezia_params, randomize_params
+
+
+@pytest.fixture
+def native_awg(monkeypatch):
+    def state():
+        with SessionLocal() as db:
+            params = get_amnezia_params(db)
+        return {"ready": True, "public_key": base64.b64encode(bytes(range(32))).decode(), "port": params.port, "params": params.model_dump()}
+    monkeypatch.setattr(amnezia_runtime, "server_status", state)
+
+
+def test_export_fails_without_runtime_or_grant(client, auth, sample_user):
+    response = client.get(f"/api/amneziawg/client/{sample_user['id']}/config", headers=auth)
+    assert response.status_code == 400
+    assert "PLACEHOLDER" not in response.text
+    with SessionLocal() as db:
+        assert db.query(AmneziaPeer).filter_by(user_id=sample_user['id']).first() is None
 
 
 def test_get_and_update_amnezia_params(client, auth):
@@ -48,8 +67,9 @@ def test_randomize_amnezia_params(client, auth):
     assert len({data["h1"], data["h2"], data["h3"], data["h4"]}) == 4
 
 
-def test_client_awg_config_and_vpn_uri(client, auth, sample_user):
+def test_client_awg_config_and_vpn_uri(client, auth, sample_user, native_awg):
     user_id = sample_user["id"]
+    assert client.post(f"/api/amneziawg/client/{user_id}/grant", headers=auth).status_code == 200
     # Download client .conf
     conf_res = client.get(f"/api/amneziawg/client/{user_id}/config", headers=auth)
     assert conf_res.status_code == 200, conf_res.text
@@ -73,16 +93,11 @@ def test_server_awg_config(client, auth, sample_user):
     client.get(f"/api/amneziawg/client/{user_id}/config", headers=auth)
 
     res = client.get("/api/amneziawg/server-config", headers=auth)
-    assert res.status_code == 200
-    text = res.text
-    assert "[Interface]" in text
-    assert "ListenPort =" in text
-    assert "H1 =" in text
-    assert "[Peer]" in text
-    assert sample_user["username"] in text
+    assert res.status_code == 409
 
 
-def test_subscription_export_amneziawg(client, auth, sample_user):
+def test_subscription_export_amneziawg(client, auth, sample_user, native_awg):
+    assert client.post(f"/api/amneziawg/client/{sample_user['id']}/grant", headers=auth).status_code == 200
     token = sample_user["sub_token"]
     # Check info endpoint exposes amneziawg formats
     info_res = client.get(f"/sub/{token}/info")

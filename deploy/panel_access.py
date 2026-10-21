@@ -125,7 +125,7 @@ server {{
         proxy_set_header X-Forwarded-Proto https;
         proxy_set_header Connection "";
         proxy_cookie_path /api /{key}/api;
-        proxy_read_timeout 90s;'''
+        proxy_read_timeout 240s;'''
     version = subprocess.run(['nginx', '-v'], capture_output=True, text=True, check=True)
     parsed = re.search(r'nginx/(\d+)\.(\d+)\.(\d+)', version.stderr)
     modern_http2 = parsed and tuple(map(int, parsed.groups())) >= (1, 25, 1)
@@ -161,7 +161,7 @@ server {{
         client_max_body_size 17m;
         rewrite ^/{key}(/.*)$ $1 break;
         proxy_pass http://spectergate_api;
-        {proxy_settings.replace('proxy_read_timeout 90s;', 'proxy_read_timeout 180s;')}
+        {proxy_settings.replace('proxy_read_timeout 240s;', 'proxy_read_timeout 180s;')}
     }}
     location /{key}/sub/ {{
         proxy_pass http://spectergate_api/sub/;

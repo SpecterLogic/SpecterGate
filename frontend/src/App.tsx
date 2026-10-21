@@ -9,6 +9,8 @@ import { configureDatePreferences } from './lib/format';
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const DnsTunnelsPage = lazy(() => import("./pages/DnsTunnels"));
 const InboundsPage = lazy(() => import("./pages/Inbounds"));
+const AmneziaWG = lazy(() => import("./pages/AmneziaWG"));
+const Sessions = lazy(() => import("./pages/Sessions"));
 const Login = lazy(() => import("./pages/Login"));
 const NodesPage = lazy(() => import("./pages/Nodes"));
 const SettingsPage = lazy(() => import("./pages/Settings"));
@@ -93,6 +95,8 @@ export default function App() {
               <Route path="/plans" element={<PermissionRoute permission="plans.read"><Commerce key="plans" mode="plans" /></PermissionRoute>} />
               <Route path="/subscriptions" element={<PermissionRoute permission="subscriptions.read"><Commerce key="subscriptions" mode="subscriptions" /></PermissionRoute>} />
               <Route path="/inbounds" element={<InboundsPage />} />
+              <Route path="/amneziawg" element={<PermissionRoute permission="users.read"><AmneziaWG /></PermissionRoute>} />
+              <Route path="/sessions" element={<PermissionRoute permission="users.read"><Sessions /></PermissionRoute>} />
               <Route path="/dns-hosts" element={<PermissionRoute permission="dns.read"><DnsHostsPage /></PermissionRoute>} />
               <Route path="/certificates" element={<PermissionRoute permission="settings.read"><CertificatesPage /></PermissionRoute>} />
               <Route path="/diagnostics" element={<PermissionRoute permission="routing.read"><DiagnosticsPage /></PermissionRoute>} />

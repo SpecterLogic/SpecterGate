@@ -13,6 +13,7 @@ def test_totp_service_functions():
     assert token.isdigit()
     assert verify_totp(secret, token) is True
     assert verify_totp(secret, "000000" if token != "000000" else "111111") is False
+    assert verify_totp("invalid!", "123456") is False
 
     setup = create_2fa_setup("testadmin")
     assert "secret" in setup
@@ -51,10 +52,27 @@ def test_2fa_api_flow(client, auth):
     )
     assert resp.status_code == 200
 
+    assert client.get("/api/auth/me", headers=auth).status_code == 401
+    renewed = client.post("/api/auth/login", json={"username": "admin", "password": "test-admin-123", "otp_code": valid_code})
+    assert renewed.status_code == 200, renewed.text
+    auth = {"Authorization": "Bearer " + renewed.json()["access_token"]}
+    replay = client.post("/api/auth/login", json={"username": "admin", "password": "test-admin-123", "otp_code": valid_code})
+    assert replay.status_code == 401
+
+    replacement_secret = generate_totp_secret()
+    replacement = client.post("/api/auth/2fa/enable", headers=auth, json={
+        "secret": replacement_secret, "code": get_totp_token(replacement_secret),
+        "recovery_codes": recovery_codes,
+    })
+    assert replacement.status_code == 409
+
     with SessionLocal() as db:
         admin = db.query(Admin).filter(Admin.username == "admin").first()
         assert admin.totp_enabled is True
-        assert admin.totp_secret == secret
+        assert admin.totp_secret != secret
+        from app.services import vault
+        assert vault.get_secret(db, f"totp_{admin.id}") == secret
+        assert all(code not in admin.recovery_codes_json for code in recovery_codes)
         assert admin.recovery_codes_json is not None
 
     # 4. Attempt login without OTP code -> 403 (2FA_REQUIRED)
@@ -76,6 +94,7 @@ def test_2fa_api_flow(client, auth):
         json={"username": "admin", "password": "test-admin-123", "otp_code": first_code},
     )
     assert rec_resp.status_code == 200
+    assert client.post("/api/auth/login", json={"username": "admin", "password": "test-admin-123", "otp_code": first_code}).status_code == 401
     token = rec_resp.json()["access_token"]
     auth_header = {"Authorization": f"Bearer {token}"}
 
@@ -84,7 +103,7 @@ def test_2fa_api_flow(client, auth):
         admin = db.query(Admin).filter(Admin.username == "admin").first()
         remaining_codes = json.loads(admin.recovery_codes_json)
         assert first_code not in remaining_codes
-        assert len(remaining_codes) == 7
+        assert len([code for code in remaining_codes if code.startswith("hmac:")]) == 7
 
     # 7. Disable 2FA
     disable_resp = client.post(
@@ -102,3 +121,31 @@ def test_2fa_api_flow(client, auth):
     # Clear rate limit failures after test so other tests are completely clean
     with login_guard._lock:
         login_guard._failures.clear()
+
+
+def test_legacy_secrets_migrate_and_recovery_is_atomic(client):
+    import uuid
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    from app.security import hash_password
+    from app.services import two_factor, vault
+    secret = generate_totp_secret()
+    with SessionLocal() as db:
+        admin = Admin(username="legacy_" + uuid.uuid4().hex[:8], password_hash=hash_password("legacy-password-123"), totp_enabled=True, totp_secret=secret, recovery_codes_json=json.dumps(["1234-ABCD"]))
+        db.add(admin)
+        db.commit()
+        admin_id = admin.id
+        two_factor.migrate(db)
+        db.refresh(admin)
+        assert admin.totp_secret == f"vault:{admin_id}"
+        assert vault.get_secret(db, f"totp_{admin_id}") == secret
+        assert "1234-ABCD" not in admin.recovery_codes_json
+    barrier = threading.Barrier(2)
+    def consume():
+        with SessionLocal() as db:
+            admin = db.get(Admin, admin_id)
+            barrier.wait(timeout=5)
+            return two_factor.consume(db, admin, "1234-ABCD")
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: consume(), range(2)))
+    assert sorted(results) == [False, True]

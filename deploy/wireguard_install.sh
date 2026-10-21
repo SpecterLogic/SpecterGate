@@ -62,6 +62,7 @@ Group=spectergate
 RuntimeDirectory=spectergate-wg
 RuntimeDirectoryMode=0750
 ExecStart=/usr/bin/python3 /usr/local/lib/spectergate-wireguard-agent.py
+ExecStopPost=-/usr/bin/python3 /usr/local/lib/spectergate-wireguard-agent.py --clear
 Restart=always
 RestartSec=5
 UMask=0077

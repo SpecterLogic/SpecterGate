@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import time
 import uuid
+import ipaddress
+import grpc
 from datetime import datetime, timedelta, timezone
 from threading import RLock
 from typing import Any
@@ -21,6 +23,11 @@ _inbound_speeds: dict[str, tuple[float, float]] = {}
 # Active client session tracking
 # session_id -> dict: { session_id, user_id, username, client_ip, user_agent, last_seen_at }
 _active_sessions: dict[str, dict[str, Any]] = {}
+_last_core_poll = 0.0
+
+
+def source_available():
+    return time.time() - _last_core_poll < 20
 
 SESSION_TTL_SECONDS = 600  # 10 minutes window for active session presence
 
@@ -146,3 +153,78 @@ def terminate_user_sessions(user_id: int) -> int:
         for sid in to_del:
             del _active_sessions[sid]
         return len(to_del)
+
+
+def blocks(db):
+    from app.services.settings import get_setting
+    entries = get_setting(db, "runtime_session_blocks", []) or []
+    return [row for row in entries if row["until"] > time.time()]
+
+
+def blocked_rules(db):
+    return [{"type": "field", "user": [row["user"]], "source": [row["ip"]], "outboundTag": "blocked"} for row in blocks(db)]
+
+
+def block_session(db, user, ip):
+    from app.services.settings import set_setting
+    address = str(ipaddress.ip_address(ip))
+    entries = [row for row in blocks(db) if (row["user"], row["ip"]) != (user.uuid, address)]
+    entries.append({"user": user.uuid, "ip": address, "until": time.time() + 600})
+    set_setting(db, "runtime_session_blocks", entries)
+    db.commit()
+
+
+def refresh_from_core(db):
+    """Observe native online IPs, block excess IPs, and reconcile real rules.
+
+    IPs are not physical devices: NAT can merge devices, changing IPs can split
+    one device. Xray's public-IP online counter defines the measured population.
+    """
+    from app.services import xray_rpc
+    from app.models import VPNUser
+    global _last_core_poll
+    try:
+        emails = xray_rpc.online_users()
+        observations = {email: {address.removeprefix("[").removesuffix("]"): timestamp for address, timestamp in xray_rpc.online_ips(email).items()} for email in emails}
+    except grpc.RpcError:
+        return False
+    _last_core_poll = time.time()
+    users = {user.uuid: user for user in db.query(VPNUser).filter(VPNUser.uuid.in_(emails)).all()}
+    changed = False
+    excluded = {(row["user"], row["ip"]) for row in blocks(db)}
+    with _lock:
+        # Native snapshots are authoritative; expired/disconnected IPs release slots.
+        for sid, session in list(_active_sessions.items()):
+            user = db.get(VPNUser, session["user_id"])
+            if user is None or session["client_ip"] not in observations.get(user.uuid, {}):
+                del _active_sessions[sid]
+    for email, ips in observations.items():
+        user = users.get(email)
+        if user is None:
+            continue
+        # Oldest admitted connections retain their slots.
+        admitted = 0
+        for address, timestamp in sorted(ips.items(), key=lambda item: item[1]):
+            try:
+                ipaddress.ip_address(address)
+            except ValueError:
+                continue
+            if (email, address) in excluded:
+                continue
+            if user.device_limit and admitted >= user.device_limit:
+                block_session(db, user, address)
+                with _lock:
+                    for sid, session in list(_active_sessions.items()):
+                        if session["user_id"] == user.id and session["client_ip"] == address:
+                            del _active_sessions[sid]
+                changed = True
+                continue
+            try:
+                register_user_session(db, user, address, "Xray native online IP")
+                admitted += 1
+            except HTTPException as error:
+                if error.status_code != 429:
+                    raise
+                block_session(db, user, address)
+                changed = True
+    return changed

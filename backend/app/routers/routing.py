@@ -66,7 +66,7 @@ def update_routing(payload: RoutingUpdate, request: Request, node_id: int | None
 def auto_register_warp(
     request: Request,
     node_id: int | None = Query(default=None, ge=1),
-    allow_fallback: bool = Query(default=True),
+    allow_fallback: bool = Query(default=False),
     db: Session = Depends(get_db),
     actor: Admin = Depends(require_permission("routing.manage")),
 ):

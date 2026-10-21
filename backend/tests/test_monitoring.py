@@ -75,7 +75,9 @@ def test_device_limit_enforcement(client, auth, sample_user):
         assert "429" in str(excinfo.value) or "تعداد دستگاه‌های مجاز" in str(excinfo.value)
 
 
-def test_terminate_session_api(client, auth, sample_user):
+def test_terminate_session_api(client, auth, sample_user, monkeypatch):
+    monkeypatch.setattr("app.services.xray.xray_status", lambda: {"running": True})
+    monkeypatch.setattr("app.services.xray.apply_config", lambda db: {"ok": True})
     user_id = sample_user["id"]
     with SessionLocal() as db:
         user = db.get(VPNUser, user_id)
@@ -90,3 +92,26 @@ def test_terminate_session_api(client, auth, sample_user):
     term_all_res = client.post(f"/api/monitoring/users/{user_id}/terminate-sessions", headers=auth)
     assert term_all_res.status_code == 200
     assert term_all_res.json()["ok"] is True
+
+
+def test_scoped_admin_cannot_read_or_terminate_other_sessions(client, auth, sample_user):
+    import uuid
+    username = "session_admin_" + uuid.uuid4().hex[:8]
+    created = client.post("/api/admins", headers=auth, json={
+        "username": username, "password": "scoped-password-123", "role": "reseller",
+        "scope": "own", "permissions": ["users.read", "users.write"],
+    })
+    assert created.status_code == 201, created.text
+    login = client.post("/api/auth/login", json={"username": username, "password": "scoped-password-123"})
+    scoped = {"Authorization": "Bearer " + login.json()["access_token"]}
+    with SessionLocal() as db:
+        user = db.get(VPNUser, sample_user["id"])
+        sid = register_user_session(db, user, "203.0.113.25")
+    try:
+        sessions = client.get("/api/monitoring/sessions", headers=scoped)
+        assert sessions.status_code == 200
+        assert all(item["session_id"] != sid for item in sessions.json())
+        assert client.post(f"/api/monitoring/sessions/{sid}/terminate", headers=scoped).status_code == 403
+        assert any(item["session_id"] == sid for item in get_active_sessions())
+    finally:
+        terminate_session(sid)

@@ -20,16 +20,20 @@ from app.models import Admin, ProtectedSetting, Setting
 from app.services import vault
 from app.services.backup_crypto import decrypt_archive
 
-TABLES = ("plans", "nodes", "inbounds", "dns_tunnels", "subscription_groups", "vpn_users", "tunnel_gateway_settings", "user_resource_access", "group_resource_access", "wireguard_peers")
+TABLES = ("plans", "nodes", "inbounds", "dns_tunnels", "subscription_groups", "vpn_users", "tunnel_gateway_settings", "user_resource_access", "group_resource_access", "wireguard_peers", "amnezia_peers")
 MAX_UPLOAD = 16 * 1024 * 1024
+
+
+def portable_setting(key):
+    return key.startswith(("routing_", "dns_config_")) or key == "amneziawg_params"
 
 
 def export_data(connection):
     tables = {}
     for name in TABLES:
         tables[name] = [dict(row) for row in connection.execute(select(Base.metadata.tables[name])).mappings()]
-    tables["settings"] = [dict(row) for row in connection.execute(select(Setting.__table__)).mappings() if row["key"].startswith("routing_")]
-    tables["protected_settings"] = [dict(row) for row in connection.execute(select(ProtectedSetting.__table__)).mappings() if row["key"].startswith(("warp_private_", "wireguard_peer_", "proxy_password_"))]
+    tables["settings"] = [dict(row) for row in connection.execute(select(Setting.__table__)).mappings() if portable_setting(row["key"])]
+    tables["protected_settings"] = [dict(row) for row in connection.execute(select(ProtectedSetting.__table__)).mappings() if row["key"].startswith(("warp_private_", "wireguard_peer_", "proxy_password_", "amnezia_peer_"))]
     names = {str(row.id): row.username for row in connection.execute(select(Admin.id, Admin.username))}
     return json.dumps({"format": "spectergate-data", "version": 1, "admins": names, "tables": tables}, default=lambda value: value.isoformat() if isinstance(value, datetime) else str(value), ensure_ascii=False).encode()
 
@@ -45,8 +49,8 @@ def _legacy_sqlite(payload):
             tables = {}
             for name in (*TABLES, "settings", "protected_settings"):
                 rows = [dict(row) for row in connection.execute(f'SELECT * FROM "{name}" LIMIT 100001')] if name in actual else []
-                if name == "settings": rows = [r for r in rows if r["key"].startswith("routing_")]
-                if name == "protected_settings": rows = [r for r in rows if r["key"].startswith(("warp_private_", "wireguard_peer_", "proxy_password_"))]
+                if name == "settings": rows = [r for r in rows if portable_setting(r["key"])]
+                if name == "protected_settings": rows = [r for r in rows if r["key"].startswith(("warp_private_", "wireguard_peer_", "proxy_password_", "amnezia_peer_"))]
                 tables[name] = rows
             names = {str(row["id"]): row["username"] for row in connection.execute("SELECT id,username FROM admins")} if "admins" in actual else {}
             return {"format": "spectergate-data", "version": 1, "admins": names, "tables": tables}
@@ -72,6 +76,7 @@ def inspect(payload: bytes, password: str):
         data = json.loads(files["data.json"]) if "data.json" in files else _legacy_sqlite(files["database.sqlite3"])
         if data.get("format") != "spectergate-data" or data.get("version") != 1: raise ValueError("Unsupported backup version")
         tables = data["tables"]
+        tables.setdefault("amnezia_peers", [])  # Older version-1 snapshots.
         if set(tables) - set((*TABLES, "settings", "protected_settings")): raise ValueError("Unexpected table")
         for name in TABLES:
             if name not in tables or not isinstance(tables[name], list) or len(tables[name]) > 100000: raise ValueError("Invalid table")
@@ -94,11 +99,11 @@ def inspect(payload: bytes, password: str):
         secrets = {}
         for row in tables.get("protected_settings", []):
             name = row["key"]
-            if not name.startswith(("warp_private_", "wireguard_peer_", "proxy_password_")): raise ValueError("Unsupported secret")
+            if not name.startswith(("warp_private_", "wireguard_peer_", "proxy_password_", "amnezia_peer_")): raise ValueError("Unsupported secret")
             key = files.get("secrets.key", b"")
             raw = base64.b64decode(row["ciphertext"], validate=True)
             secrets[name] = AESGCM(key).decrypt(raw[:12], raw[12:], name.encode()).decode()
-        if any(not r["key"].startswith("routing_") for r in tables.get("settings", [])): raise ValueError("Unsupported setting")
+        if any(not portable_setting(r["key"]) for r in tables.get("settings", [])): raise ValueError("Unsupported setting")
         return data, secrets
     except ValueError:
         raise
@@ -113,6 +118,8 @@ def summary(data):
 def restore(db, data, secrets, owner_id):
     from app.services.wireguard import server_status
     live = server_status()
+    from app.services import amnezia_runtime
+    awg_live = amnezia_runtime.server_status()
     from app.schemas import InboundCreate, DnsTunnelCreate, UserCreate
     for row in data["tables"]["inbounds"]: InboundCreate.model_validate(row)
     for row in data["tables"]["dns_tunnels"]: DnsTunnelCreate.model_validate(row)
@@ -130,13 +137,14 @@ def restore(db, data, secrets, owner_id):
                 row = dict(source)
                 for column in ("created_by", "owner_admin_id"):
                     if column in row: row[column] = mapping.get(row[column], owner_id)
-                if name == "wireguard_peers":
-                    sample = live.get("peers", {}).get(row["public_key"], {})
-                    row.update(last_rx=int(sample.get("rx", 0)), last_tx=int(sample.get("tx", 0)), counter_epoch=live.get("epoch", ""))
+                if name in {"wireguard_peers", "amnezia_peers"}:
+                    state = live if name == "wireguard_peers" else awg_live
+                    sample = state.get("peers", {}).get(row["public_key"], {})
+                    row.update(last_rx=int(sample.get("rx", 0)), last_tx=int(sample.get("tx", 0)), counter_epoch=state.get("epoch", ""))
                 db.execute(table.insert().values(**row))
-        db.execute(Setting.__table__.delete().where(Setting.key.startswith("routing_")))
+        db.execute(Setting.__table__.delete().where(Setting.key.startswith("routing_") | Setting.key.startswith("dns_config_") | (Setting.key == "amneziawg_params")))
         for row in data["tables"].get("settings", []): db.execute(Setting.__table__.insert().values(**row))
-        db.execute(ProtectedSetting.__table__.delete().where(ProtectedSetting.key.startswith("warp_private_") | ProtectedSetting.key.startswith("wireguard_peer_") | ProtectedSetting.key.startswith("proxy_password_")))
+        db.execute(ProtectedSetting.__table__.delete().where(ProtectedSetting.key.startswith("warp_private_") | ProtectedSetting.key.startswith("wireguard_peer_") | ProtectedSetting.key.startswith("proxy_password_") | ProtectedSetting.key.startswith("amnezia_peer_")))
         db.expire_all()
         for name, value in secrets.items(): vault.put_secret(db, name, value)
         db.flush()

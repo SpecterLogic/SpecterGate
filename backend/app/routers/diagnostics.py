@@ -13,6 +13,9 @@ from app.services.routing import (
     OutboundBalancer,
     RoutingConfig,
     profile_keys,
+    verify_node,
+    write_config,
+    RoutingUpdate,
 )
 from app.services.settings import get_setting, set_setting
 
@@ -20,12 +23,13 @@ router = APIRouter(prefix="/diagnostics", tags=["diagnostics"])
 
 
 class TestRouteRequest(BaseModel):
-    target_domain: str | None = None
-    target_ip: str | None = None
+    target_domain: str | None = Field(default=None, max_length=253)
+    target_ip: str | None = Field(default=None, max_length=45)
     target_port: int | None = Field(default=None, ge=1, le=65535)
     network: Literal["tcp", "udp"] = "tcp"
-    inbound_tag: str | None = None
-    node_id: int | None = None
+    inbound_tag: str | None = Field(default=None, max_length=128)
+    node_id: int | None = Field(default=None, ge=1)
+    protocol: Literal["http", "tls", "quic", "bittorrent"] | None = None
 
 
 class TestRouteResponse(BaseModel):
@@ -67,6 +71,7 @@ def simulate_route(
         network=payload.network,
         inbound_tag=payload.inbound_tag,
         node_id=payload.node_id,
+        protocol=payload.protocol,
     )
     return TestRouteResponse(**res)
 
@@ -90,6 +95,7 @@ def list_balancers(
     admin: Admin = Depends(require_permission("routing.read")),
     db: Session = Depends(get_db),
 ):
+    verify_node(db, node_id)
     key, _ = profile_keys(node_id)
     policy = RoutingConfig.model_validate(get_setting(db, key, None) or {})
     return policy.balancers
@@ -103,11 +109,15 @@ def update_balancers(
     admin: Admin = Depends(require_permission("routing.manage")),
     db: Session = Depends(get_db),
 ):
+    verify_node(db, node_id)
     key, _ = profile_keys(node_id)
     policy_dict = get_setting(db, key, None) or {}
-    policy = RoutingConfig.model_validate(policy_dict)
-    policy.balancers = balancers
-    set_setting(db, key, policy.model_dump())
+    try:
+        policy = RoutingUpdate.model_validate({**policy_dict, "balancers": [item.model_dump() for item in balancers]})
+    except ValueError:
+        raise HTTPException(422, "Balancer references are invalid or still in use.") from None
+    write_config(db, policy, node_id)
+    db.commit()
     write_audit(
         db,
         admin,

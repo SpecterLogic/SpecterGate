@@ -36,14 +36,21 @@ def test_upload_mismatched_key_fails(client, auth):
     assert "همخوانی ندارد" in res.json()["detail"]
 
 
-def test_issue_certificate(client, auth):
+def test_issue_certificate(client, auth, monkeypatch):
+    def unavailable(*args):
+        raise RuntimeError("Worker unavailable")
+    monkeypatch.setattr("app.services.ssl_worker.issue", unavailable)
     domain = "auto.example.com"
     payload = {"domain": domain}
     res = client.post("/api/certificates/issue", json=payload, headers=auth)
-    assert res.status_code == 200, res.text
-    data = res.json()
-    assert data["domain"] == domain
-    assert data["is_active"] is True
+    assert res.status_code == 503, res.text
+    assert not any(item["domain"] == domain for item in client.get("/api/certificates", headers=auth).json())
+
+
+@pytest.mark.parametrize("domain", ["..", "--help", "bad:domain", "bad name", "bad\nname", "-bad.example.com"])
+def test_invalid_certificate_domains(client, auth, domain):
+    response = client.post("/api/certificates/issue", headers=auth, json={"domain": domain})
+    assert response.status_code == 400
 
 
 def test_list_and_delete_certificate(client, auth):

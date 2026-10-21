@@ -1,0 +1,22 @@
+syntax = "proto3";
+package spectergate.wire;
+// Wire-compatible subset of Xray v26.3.27 router/stats command messages.
+// Upstream: https://github.com/XTLS/Xray-core/tree/v26.3.27/app
+message RoutingContext {
+  string inbound_tag = 1;
+  uint32 network = 2;
+  repeated bytes source_ips = 3;
+  repeated bytes target_ips = 4;
+  uint32 source_port = 5;
+  uint32 target_port = 6;
+  string target_domain = 7;
+  string protocol = 8;
+  string user = 9;
+  repeated string outbound_group_tags = 11;
+  string outbound_tag = 12;
+}
+message TestRouteRequest { RoutingContext routing_context = 1; }
+message StatsRequest { string name = 1; bool reset = 2; }
+message OnlineIps { string name = 1; map<string, int64> ips = 2; }
+message Empty {}
+message OnlineUsers { repeated string users = 1; }

@@ -13,9 +13,28 @@ from app.services.monitoring import (
     terminate_session,
     terminate_user_sessions,
 )
-from app.services.permissions import ensure_user_access
+from app.services.permissions import ensure_user_access, user_query_for, require
+from app.services import xray
+from app.services.monitoring import block_session
+
+
+def enforce_disconnect(db, users_and_ips):
+    if not xray.xray_status()["running"]:
+        raise HTTPException(503, "The local core is not running; no disconnection was performed.")
+    with xray._control_lock:
+        for user, address in users_and_ips:
+            block_session(db, user, address)
+        result = xray.apply_config(db)
+        if not result["ok"]:
+            raise HTTPException(503, "Core configuration could not be applied; disconnect was not confirmed.")
 
 router = APIRouter(prefix="/monitoring", tags=["monitoring"])
+
+
+@router.get("/status")
+def source_status(admin: Admin = Depends(require_permission("users.read"))):
+    from app.services.monitoring import source_available
+    return {"available": xray.xray_status()["running"] and source_available(), "scope": "local-xray-public-ips"}
 
 
 @router.get("/speeds")
@@ -37,7 +56,8 @@ def list_active_sessions(
         if not user:
             raise HTTPException(status_code=404, detail="کاربر یافت نشد.")
         ensure_user_access(db, admin, user)
-    return get_active_sessions(user_id)
+    visible_ids = {row.id for row in user_query_for(db, admin).all()}
+    return [session for session in get_active_sessions(user_id) if session["user_id"] in visible_ids]
 
 
 @router.post("/sessions/{session_id}/terminate")
@@ -47,6 +67,15 @@ def terminate_single_session(
     admin: Admin = Depends(require_permission("users.write")),
     db: Session = Depends(get_db),
 ):
+    session = next((item for item in get_active_sessions() if item["session_id"] == session_id), None)
+    if session is None:
+        raise HTTPException(status_code=404, detail="نشست متصل یافت نشد.")
+    user = db.get(VPNUser, session["user_id"])
+    if user is None:
+        raise HTTPException(status_code=404, detail="کاربر یافت نشد.")
+    ensure_user_access(db, admin, user)
+    require(admin, "xray.manage")
+    enforce_disconnect(db, [(user, session["client_ip"])])
     found = terminate_session(session_id)
     if not found:
         raise HTTPException(status_code=404, detail="نشست متصل یافت نشد.")
@@ -59,7 +88,7 @@ def terminate_single_session(
         f"نشست متصل {session_id} قطع شد.",
         get_client_ip(request),
     )
-    return {"ok": True}
+    return {"ok": True, "message": "User/IP blocked for 10 minutes; local core restarted, so other clients must reconnect."}
 
 
 @router.post("/users/{user_id}/terminate-sessions")
@@ -73,6 +102,10 @@ def terminate_all_user_sessions(
     if not user:
         raise HTTPException(status_code=404, detail="کاربر یافت نشد.")
     ensure_user_access(db, admin, user)
+    require(admin, "xray.manage")
+    sessions = get_active_sessions(user_id)
+    if sessions:
+        enforce_disconnect(db, [(user, session["client_ip"]) for session in sessions])
     count = terminate_user_sessions(user_id)
     write_audit(
         db,

@@ -253,7 +253,7 @@ def generate_config(
 
     config = {
         "log": log_settings,
-        "api": {"tag": "api", "services": ["StatsService", "HandlerService"]},
+        "api": {"tag": "api", "services": ["StatsService", "HandlerService", "RoutingService"]},
         "stats": {},
         "policy": {
             "levels": {
@@ -290,6 +290,8 @@ def generate_config(
             ],
         },
     }
+    from app.services.monitoring import blocked_rules
+    config["routing"]["rules"][1:1] = blocked_rules(db) if node is None or node.is_local else []
     client_count = sum(len(item.get("settings", {}).get("clients", [])) for item in generated)
     from app.services.routing import apply_to_xray
     apply_to_xray(db, config, node)

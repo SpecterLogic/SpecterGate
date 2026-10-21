@@ -689,9 +689,9 @@ class TwoFactorSetupOut(BaseModel):
 
 
 class TwoFactorEnableRequest(BaseModel):
-    secret: str
-    code: str
-    recovery_codes: list[str]
+    secret: str = Field(min_length=32, max_length=32, pattern=r"^[A-Z2-7]+$")
+    code: str = Field(pattern=r"^[0-9]{6}$")
+    recovery_codes: list[str] = Field(min_length=8, max_length=8)
 
 
 class TwoFactorDisableRequest(BaseModel):

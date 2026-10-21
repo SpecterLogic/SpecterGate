@@ -127,20 +127,8 @@ def register_warp_account(
             last_error = str(exc)
             logger.warning("Cloudflare registration attempt on %s failed: %s", endpoint, exc)
 
-    if allow_fallback:
-        # Fallback for environments without direct Cloudflare connectivity
-        return {
-            "ok": True,
-            "warp_enabled": True,
-            "warp_private_key": private_key,
-            "warp_public_key": DEFAULT_CF_PUBLIC_KEY,
-            "warp_endpoint": peer_endpoint,
-            "warp_addresses": ["172.16.0.2/32"],
-            "warp_reserved": [0, 0, 0],
-            "fallback": True,
-            "message": "کلیدها تولید شدند و مقادیر استاندارد WARP اعمال شدند (اتصال به سرور ثبت موقتاً در دسترس نبود).",
-        }
-
+    # A locally generated key is unusable until Cloudflare registers its public
+    # key. Keep the legacy argument for callers, but never report fake success.
     return {
         "ok": False,
         "message": f"ثبت حساب WARP در کلودفلر ناموفق بود: {last_error}",

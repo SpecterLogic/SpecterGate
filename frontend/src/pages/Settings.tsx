@@ -1,3 +1,4 @@
+import TwoFactorSettings from "../components/TwoFactorSettings";
 import { useEffect, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -510,6 +511,7 @@ export default function SettingsPage({ section }: { section?: TabKey }) {
 
           {tab === "security" && (
             <div className="settings-stack">
+              <TwoFactorSettings />
               <Card>
                 <SectionHeader title="تغییر رمز عبور" subtitle="رمز قوی و یکتا برای حساب مدیریت انتخاب کنید." />
                 <form onSubmit={changePassword} className="settings-form">

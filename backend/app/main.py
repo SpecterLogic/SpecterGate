@@ -51,8 +51,12 @@ from app.services.http_security import RequestBodyLimitMiddleware
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    from app.migrations import upgrade
+    upgrade(engine)
     with SessionLocal() as db:
         seed_database(db)
+        from app.services.two_factor import migrate
+        migrate(db)
     stop = asyncio.Event()
     worker = asyncio.create_task(maintenance.run(stop))
     app.state.tunnel_gateway = TunnelGateway()
