@@ -101,7 +101,7 @@ def test_core_options_ech_mldsa65_finalmask_xdrive():
 
 def test_protocols_and_xray_api(client, auth, monkeypatch):
     from app.services import xray as xray_service
-    monkeypatch.setattr(xray_service, "restart_process", lambda: None)
+    monkeypatch.setattr(xray_service, "apply_config", lambda db: {"ok": True})
 
     # 1. Protocols Overview
     overview_resp = client.get("/api/protocols/overview", headers=auth)

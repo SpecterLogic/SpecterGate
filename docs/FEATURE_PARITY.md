@@ -44,7 +44,7 @@ This checklist tracks functional coverage against the requested 3x-ui, PasarGuar
 | Routing tester backed by core diagnostics | Uses the running local Xray RoutingService.TestRoute; native rule/condition tests pass. It is not an end-to-end connectivity test and remote-node RPC is not exposed. |
 | Dedicated hosts/DNS editor | Implemented and included in data backups; core/client compatibility depends on the chosen DNS format. |
 | Inbound aggregate quotas, expiry, scheduled traffic reset and bulk operations | Not implemented; user/group quotas are available |
-| Online IPs / limits | Local Xray native online-IP polling and temporary user/IP rules implemented. Applying limits/disconnection restarts the local core and interrupts other clients. NAT is not a physical-device identifier; remote nodes and native tunnels are outside this counter. |
+| Online IPs / limits | Managed local Xray tracks authenticated logical flows. New excess IPs are rejected atomically; lowering limits closes excess flows. Manual disconnect blocks the selected user/IP for ten minutes without restarting the core. Standard legacy cores require upgrade for enforcement. NAT is not a physical-device identifier; remote nodes and native tunnels are outside this counter. |
 | LDAP / external authentication | Not implemented. Local TOTP MFA is available with encrypted keys, protected recovery hashes and replay prevention. |
 | Email / Discord integration and additional notifications | Not implemented; Telegram scope remains administration and owner backups |
 | Private dashboard URL | Dedicated HTTPS port and random path implemented; authentication remains required |

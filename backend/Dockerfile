@@ -1,3 +1,8 @@
+FROM golang:1.26 AS core-build
+RUN apt-get update && apt-get install -y --no-install-recommends python3 git ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY core /build/core
+RUN bash /build/core/build.sh /build/xray
+
 FROM python:3.12-slim
 
 ARG XRAY_VERSION=26.3.27
@@ -19,13 +24,15 @@ RUN case "$TARGETARCH" in \
         arm64) asset="Xray-linux-arm64-v8a.zip"; pinned_hash=4d30283ae614e3057f730f67cd088a42be6fdf91f8639d82cb69e48cde80413c ;; \
         *) echo "Unsupported architecture: $TARGETARCH" >&2; exit 1 ;; \
     esac \
-    && { [ "$XRAY_VERSION" = 26.3.27 ] || [ -n "$XRAY_SHA256" ]; } \
+    && [ "$XRAY_VERSION" = 26.3.27 ] \
     && mkdir -p /opt/xray \
     && curl -fsSL "https://github.com/XTLS/Xray-core/releases/download/v${XRAY_VERSION}/${asset}" -o /tmp/xray.zip \
     && printf '%s  /tmp/xray.zip\n' "${XRAY_SHA256:-$pinned_hash}" | sha256sum -c - \
     && unzip -q /tmp/xray.zip -d /opt/xray \
     && install -m 0755 /opt/xray/xray /usr/local/bin/xray \
     && rm -rf /tmp/xray.zip
+
+COPY --from=core-build /build/xray /usr/local/bin/xray
 
 WORKDIR /app
 

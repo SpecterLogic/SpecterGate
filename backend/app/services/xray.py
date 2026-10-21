@@ -151,7 +151,6 @@ def _clients_for(inbound: Inbound, users: list[VPNUser]) -> list[dict]:
             client: dict = {
                 "id": user.uuid,
                 "email": user.uuid,
-                "limitIp": user.device_limit or 0,
                 "totalGB": 0,
                 "expiryTime": 0,
                 "enable": True,
@@ -163,7 +162,7 @@ def _clients_for(inbound: Inbound, users: list[VPNUser]) -> list[dict]:
                 client["flow"] = client_flow(inbound)
             clients.append(client)
         elif inbound.protocol == "trojan":
-            clients.append({"password": user.password, "email": user.uuid, "limitIp": user.device_limit or 0})
+            clients.append({"password": user.password, "email": user.uuid})
         elif inbound.protocol == "shadowsocks":
             clients.append({"password": user.password, "email": user.uuid, "method": "chacha20-ietf-poly1305"})
     return clients
@@ -290,8 +289,6 @@ def generate_config(
             ],
         },
     }
-    from app.services.monitoring import blocked_rules
-    config["routing"]["rules"][1:1] = blocked_rules(db) if node is None or node.is_local else []
     client_count = sum(len(item.get("settings", {}).get("clients", [])) for item in generated)
     from app.services.routing import apply_to_xray
     apply_to_xray(db, config, node)
@@ -372,6 +369,12 @@ def apply_config(db: Session, restart: bool = True) -> dict:
         path = write_config(config)
         try:
             restart_process()
+            from app.services import session_control
+            import grpc
+            try:
+                session_control.sync(db)
+            except (grpc.RpcError, RuntimeError):
+                warnings.append("Targeted session control unavailable; install the managed SpecterGate core.")
             message += " سرویس Xray راه‌اندازی مجدد شد."
         except RuntimeError as exc:
             message += f" اما اجرای Xray ناموفق بود: {exc}"

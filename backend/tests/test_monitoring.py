@@ -77,7 +77,9 @@ def test_device_limit_enforcement(client, auth, sample_user):
 
 def test_terminate_session_api(client, auth, sample_user, monkeypatch):
     monkeypatch.setattr("app.services.xray.xray_status", lambda: {"running": True})
-    monkeypatch.setattr("app.services.xray.apply_config", lambda db: {"ok": True})
+    monkeypatch.setattr("app.services.session_control.available", lambda: True)
+    monkeypatch.setattr("app.services.session_control.sync", lambda db: {"protocol_version": 1})
+    monkeypatch.setattr("app.services.xray.apply_config", lambda db: pytest.fail("disconnect restarted core"))
     user_id = sample_user["id"]
     with SessionLocal() as db:
         user = db.get(VPNUser, user_id)
@@ -115,3 +117,30 @@ def test_scoped_admin_cannot_read_or_terminate_other_sessions(client, auth, samp
         assert any(item["session_id"] == sid for item in get_active_sessions())
     finally:
         terminate_session(sid)
+
+
+def test_legacy_core_refuses_disconnect_without_restart(client, auth, sample_user, monkeypatch):
+    monkeypatch.setattr("app.services.xray.xray_status", lambda: {"running": True})
+    monkeypatch.setattr("app.services.session_control.available", lambda: False)
+    monkeypatch.setattr("app.services.xray.apply_config", lambda db: pytest.fail("legacy core restarted"))
+    with SessionLocal() as db:
+        user = db.get(VPNUser, sample_user["id"])
+        sid = register_user_session(db, user, "192.0.2.91")
+    try:
+        result = client.post(f"/api/monitoring/sessions/{sid}/terminate", headers=auth)
+        assert result.status_code == 503
+        assert any(row["session_id"] == sid for row in get_active_sessions())
+    finally:
+        terminate_session(sid)
+
+
+def test_ip_limit_and_temporary_blocks_do_not_change_core_config(sample_user):
+    from app.services.xray import generate_config, config_hash
+    from app.services.monitoring import block_session
+    with SessionLocal() as db:
+        user = db.get(VPNUser, sample_user["id"])
+        before = config_hash(generate_config(db)[0])
+        user.device_limit = 7
+        db.commit()
+        block_session(db, user, "192.0.2.90")
+        assert config_hash(generate_config(db)[0]) == before

@@ -28,6 +28,7 @@ CERTBOT_EMAIL="${CERTBOT_EMAIL:-}"
 APP_DIR="/opt/spectergate"
 WEB_ROOT="/var/www/spectergate"
 XRAY_VERSION="${XRAY_VERSION:-26.3.27}"
+[[ "$XRAY_VERSION" == 26.3.27 ]] || { echo 'The managed core is pinned to Xray 26.3.27.' >&2; exit 1; }
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 if [[ ! "$DOMAIN" =~ ^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?\.[a-zA-Z]{2,63}$ ]] || [[ "$DOMAIN" == *..* || ${#DOMAIN} -gt 253 ]]; then
@@ -47,7 +48,7 @@ export DEBIAN_FRONTEND=noninteractive
 umask 022
 apt-get update
 apt-get install -y python3 python3-venv python3-pip nginx certbot python3-certbot-nginx \
-  curl unzip rsync openssl ca-certificates
+  curl unzip rsync openssl ca-certificates git build-essential
 
 if ! python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)'; then
   echo 'SpecterGate requires Python 3.11+. Use Ubuntu 24.04+ or Debian 12+, or configure a supported Python before installation.' >&2
@@ -67,9 +68,6 @@ if [[ ! -x /usr/local/bin/xray ]]; then
     aarch64|arm64) XRAY_ASSET="Xray-linux-arm64-v8a.zip"; PINNED_HASH=4d30283ae614e3057f730f67cd088a42be6fdf91f8639d82cb69e48cde80413c ;;
     *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
   esac
-  if [[ "$XRAY_VERSION" != 26.3.27 && -z "${XRAY_SHA256:-}" ]]; then
-    echo 'A custom Xray version requires XRAY_SHA256.' >&2; exit 1
-  fi
   mkdir -p /usr/local/share/xray
   XRAY_WORK=$(mktemp -d /tmp/spectergate-xray.XXXXXXXX)
   trap 'rm -rf -- "$XRAY_WORK"' EXIT
@@ -99,6 +97,16 @@ rsync -a \
 # Downloaded source folders may be private temporary directories. rsync -a
 # copies their root mode too; the service account must traverse the app root.
 chmod 0755 "$APP_DIR"
+
+# Build the pinned core extension; install atomically after a successful build.
+CORE_CANDIDATE=$(mktemp /usr/local/bin/.spectergate-xray.XXXXXXXX)
+if ! bash "$APP_DIR/backend/core/build.sh" "$CORE_CANDIDATE"; then
+  rm -f -- "$CORE_CANDIDATE"
+  echo 'Managed core build failed. Existing binary was preserved.' >&2
+  exit 1
+fi
+chmod 0755 "$CORE_CANDIDATE"
+mv -f -- "$CORE_CANDIDATE" /usr/local/bin/xray
 
 # Build the frontend on the server.
 cd "$APP_DIR/frontend"

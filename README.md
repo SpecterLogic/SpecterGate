@@ -11,6 +11,7 @@ SpecterGate combines a React interface with a FastAPI backend and Xray-core. It 
 - Optional native AmneziaWG with separate peers and keys, per-user grants, IPv4 configuration/QR and a root companion for traffic and expiry enforcement.
 - Encrypted TOTP secrets, protected recovery-code hashes and single-use login codes.
 - Hosts/DNS editing, routing diagnostics against the running Xray core, and local online-IP monitoring.
+- Managed Xray extension for independent user/IP disconnection and atomic concurrent-IP limits, without restarting other users' connections.
 - Certificate upload plus a separate Linux Certbot worker and renewal hooks.
 - RAW/TCP, WebSocket, gRPC, HTTPUpgrade, XHTTP and mKCP transports; TLS and VLESS Reality.
 - Validated advanced TLS/Reality, Sniffing, Sockopt and stream options, subscription ordering and host overrides.
@@ -35,6 +36,8 @@ curl -fsSLo /tmp/spectergate-install.sh https://raw.githubusercontent.com/Specte
 ```
 
 Add `--database postgresql` for a local PostgreSQL database, or `--version TAG_OR_COMMIT` to select an existing version. SQLite is the default. The installer generates owner credentials, configures HTTPS and installs the `spectergate` management command. Your domain must point to the server, with TCP ports 80/443 reachable.
+
+The installer and Docker build compile a pinned Xray revision with the session-control extension in `backend/core`; the first build requires extra time and Internet access to Go dependencies. Existing installations using a standard Xray binary need the [managed core upgrade](docs/NATIVE_SERVICES_FA.md#ipهای-آنلاین-و-تست-مسیر) before targeted disconnection or IP-limit enforcement is available.
 
 `--private-panel` puts management on a dedicated port and random URL path; allow that port in your provider firewall. Use `--panel-port PORT` to select the port. Add `--wireguard` for native WireGuard (UDP 51820), or `--amneziawg` for native AmneziaWG (UDP 51821). The full private URL is printed during installation. Public subscription paths remain available separately. HTTPS and administrator authentication are still required. See the [native services guide](docs/NATIVE_SERVICES_FA.md) for permissions, setup and deployment limits.
 

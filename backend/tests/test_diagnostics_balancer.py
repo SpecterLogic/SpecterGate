@@ -15,7 +15,7 @@ import grpc
 
 
 @pytest.fixture
-def native_routing(monkeypatch, tmp_path, sample_user):
+def native_routing(monkeypatch, tmp_path, sample_user, request):
     binary = os.getenv("XRAY_TEST_BINARY")
     if not binary:
         pytest.skip("Native Xray binary required for route diagnostics")
@@ -41,6 +41,15 @@ def native_routing(monkeypatch, tmp_path, sample_user):
         ]},
     }
     config["inbounds"].append({"tag": "native-vless", "listen": "127.0.0.1", "port": vless_port, "protocol": "vless", "settings": {"decryption": "none", "clients": [{"id": sample_user["uuid"], "email": sample_user["uuid"], "level": 0}]}})
+    network = getattr(request, "param", "raw")
+    stream = {"network": network, "security": "none"}
+    if network == "ws":
+        stream["wsSettings"] = {"path": "/flow"}
+    elif network == "xhttp":
+        stream["xhttpSettings"] = {"path": "/flow", "mode": "auto"}
+    config["inbounds"][-1]["streamSettings"] = stream
+    other_uuid = "ed0c32b1-cb18-4ea8-a00d-98619cc0ece1"
+    config["inbounds"][-1]["settings"]["clients"].append({"id": other_uuid, "email": other_uuid, "level": 0})
     path = tmp_path / "routing-native.json"
     path.write_text(json.dumps(config), encoding="utf-8")
     process = subprocess.Popen([binary, "run", "-c", str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -55,8 +64,11 @@ def native_routing(monkeypatch, tmp_path, sample_user):
                 time.sleep(0.1)
         else:
             pytest.fail("Native API did not become ready")
+        from app.services import session_control
+        if session_control.available():
+            session_control.call("Configure", {"limits": {}, "blocks": []})
         monkeypatch.setattr(xray, "xray_status", lambda: {"running": True})
-        yield {"config": config, "path": path, "process": process, "vless_port": vless_port, "user": sample_user}
+        yield {"config": config, "path": path, "process": process, "vless_port": vless_port, "user": sample_user, "other_uuid": other_uuid, "stream": stream}
     finally:
         process.terminate()
         process.wait(timeout=10)
@@ -112,14 +124,15 @@ def test_native_route_respects_missing_fields_and_user_ip_blocks(native_routing)
 
 
 def test_live_online_ips_limits_and_real_disconnect(native_routing, monkeypatch, tmp_path):
-    import copy
     import socketserver
     import struct
     import threading
     import uuid
     from app.models import VPNUser
-    from app.services import monitoring, maintenance
+    from app.services import monitoring, session_control
     from app.routers.monitoring import enforce_disconnect
+    if not session_control.available():
+        pytest.skip("Managed core required for targeted flow control")
 
     class Echo(socketserver.BaseRequestHandler):
         def handle(self):
@@ -128,16 +141,15 @@ def test_live_online_ips_limits_and_real_disconnect(native_routing, monkeypatch,
 
     server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), Echo)
     server.daemon_threads = True
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
+    threading.Thread(target=server.serve_forever, daemon=True).start()
     opened = []
 
-    def connect(source):
+    def connect(source, user_uuid=None):
         connection = socket.socket()
         connection.settimeout(3)
         connection.bind((source, 0))
         connection.connect(("127.0.0.1", native_routing["vless_port"]))
-        request = b"\x00" + uuid.UUID(native_routing["user"]["uuid"]).bytes + b"\x00\x01" + struct.pack(">H", server.server_address[1]) + b"\x01" + socket.inet_aton("127.0.0.1") + b"ping"
+        request = b"\x00" + uuid.UUID(user_uuid or native_routing["user"]["uuid"]).bytes + b"\x00\x01" + struct.pack(">H", server.server_address[1]) + b"\x01" + socket.inet_aton("127.0.0.1") + b"ping"
         connection.sendall(request)
         response = b""
         while len(response) < 6:
@@ -149,49 +161,126 @@ def test_live_online_ips_limits_and_real_disconnect(native_routing, monkeypatch,
         opened.append(connection)
         return connection
 
+    def closed(connection):
+        try:
+            assert connection.recv(1) == b""
+        except ConnectionResetError:
+            pass
+
     try:
         first = connect("127.0.0.2")
         second = connect("127.0.0.3")
-        email = native_routing["user"]["uuid"]
-        assert email in xray_rpc.online_users()
-        assert set(xray_rpc.online_ips(email)) == {"127.0.0.2", "127.0.0.3"}
+        other = connect("127.0.0.2", native_routing["other_uuid"])
         with SessionLocal() as db:
             user = db.get(VPNUser, native_routing["user"]["id"])
-            assert monitoring.refresh_from_core(db) is False
+            monitoring.refresh_from_core(db)
             assert len(monitoring.get_active_sessions(user.id)) == 2
             user.device_limit = 1
             db.commit()
-            assert monitoring.refresh_from_core(db) is True
+            monitoring.refresh_from_core(db)
+            closed(second)
+            first.sendall(b"still-alive")
+            assert first.recv(1024) == b"still-alive"
+            assert native_routing["process"].poll() is None
             assert len(monitoring.get_active_sessions(user.id)) == 1
-            assert monitoring.blocked_rules(db)
-
-            def generated(db):
-                config = copy.deepcopy(native_routing["config"])
-                config["routing"]["rules"][1:1] = monitoring.blocked_rules(db)
-                return config, [], [], 1
-
-            monkeypatch.setattr(maintenance, "reconcile", lambda: None)
-            monkeypatch.setattr(xray, "generate_config", generated)
-            monkeypatch.setattr(xray, "_process", native_routing["process"])
-            monkeypatch.setattr(xray.settings, "xray_enabled", True)
-            monkeypatch.setattr(xray.settings, "xray_binary", os.environ["XRAY_TEST_BINARY"])
-            monkeypatch.setattr(xray.settings, "xray_config_path", str(native_routing["path"]))
-            monkeypatch.setattr(xray.settings, "xray_log_path", str(tmp_path / "disconnect-core.log"))
+            # A denied new IP cannot disturb an admitted connection.
+            with pytest.raises((AssertionError, ConnectionResetError)):
+                connect("127.0.0.4")
+            first.sendall(b"survived-admission")
+            assert first.recv(1024) == b"survived-admission"
             enforce_disconnect(db, [(user, "127.0.0.2")])
-            assert native_routing["process"].poll() is not None
-            for connection in (first, second):
-                try:
-                    assert connection.recv(1) == b""
-                except ConnectionResetError:
-                    pass
-            assert xray_rpc.route("example.com", user=email, source_ip="127.0.0.2").outbound_tag == "blocked"
+            closed(first)
+            other.sendall(b"other-user-same-ip")
+            assert other.recv(1024) == b"other-user-same-ip"
+            assert native_routing["process"].poll() is None
+            with pytest.raises((AssertionError, ConnectionResetError)):
+                connect("127.0.0.2")
+            other.close()
+            for _ in range(30):
+                if not session_control.call("Snapshot")["flows"]:
+                    break
+                time.sleep(0.1)
+            assert not session_control.call("Snapshot")["flows"]
     finally:
         for connection in opened:
             connection.close()
-        if xray._process is not None:
-            xray.stop_process()
         server.shutdown()
         server.server_close()
+
+
+@pytest.mark.parametrize("native_routing", ["raw", "ws", "xhttp"], indirect=True)
+def test_transport_and_mux_user_isolation(native_routing, tmp_path):
+    import socketserver
+    import struct
+    import threading
+    from app.services import session_control
+    if not session_control.available():
+        pytest.skip("Managed core required")
+
+    class Echo(socketserver.BaseRequestHandler):
+        def handle(self):
+            while data := self.request.recv(1024):
+                self.request.sendall(data)
+
+    echo = socketserver.ThreadingTCPServer(("127.0.0.1", 0), Echo)
+    echo.daemon_threads = True
+    threading.Thread(target=echo.serve_forever, daemon=True).start()
+    processes, connections = [], []
+
+    def connect(user, index):
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        config = {
+            "inbounds": [{"listen": "127.0.0.1", "port": port, "protocol": "socks", "settings": {"auth": "noauth"}}],
+            "outbounds": [{"protocol": "vless", "settings": {"vnext": [{"address": "127.0.0.1", "port": native_routing["vless_port"], "users": [{"id": user, "encryption": "none"}]}]}, "streamSettings": native_routing["stream"], "mux": {"enabled": native_routing["stream"]["network"] != "xhttp", "concurrency": 8}}],
+        }
+        path = tmp_path / f"client-{index}.json"
+        path.write_text(json.dumps(config), encoding="utf-8")
+        process = subprocess.Popen([os.environ["XRAY_TEST_BINARY"], "run", "-c", str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        processes.append(process)
+        for _ in range(40):
+            try:
+                connection = socket.create_connection(("127.0.0.1", port), timeout=3)
+                break
+            except OSError:
+                assert process.poll() is None
+                time.sleep(.1)
+        else:
+            pytest.fail("Client SOCKS did not start")
+        connections.append(connection)
+        connection.sendall(b"\x05\x01\x00")
+        assert connection.recv(2) == b"\x05\x00"
+        connection.sendall(b"\x05\x01\x00\x01" + socket.inet_aton("127.0.0.1") + struct.pack(">H", echo.server_address[1]))
+        response = b""
+        while len(response) < 10:
+            part = connection.recv(10-len(response))
+            assert part, "SOCKS connection closed during handshake"
+            response += part
+        assert response[:2] == b"\x05\x00"
+        connection.sendall(b"hello")
+        assert connection.recv(5) == b"hello"
+        return connection
+
+    try:
+        first = connect(native_routing["user"]["uuid"], 1)
+        other = connect(native_routing["other_uuid"], 2)
+        session_control.call("Configure", {"limits": {}, "blocks": [{"user": native_routing["user"]["uuid"], "ip": "127.0.0.1", "until": time.time()+600}]})
+        try:
+            assert first.recv(1) == b""
+        except ConnectionResetError:
+            pass
+        other.sendall(b"survived")
+        assert other.recv(8) == b"survived"
+        assert native_routing["process"].poll() is None
+    finally:
+        for connection in connections:
+            connection.close()
+        for process in processes:
+            process.terminate()
+            process.wait(timeout=10)
+        echo.shutdown()
+        echo.server_close()
 
 
 def test_ping_localhost(client, auth):

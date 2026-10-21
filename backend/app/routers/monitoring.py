@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+import grpc
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
@@ -14,7 +14,7 @@ from app.services.monitoring import (
     terminate_user_sessions,
 )
 from app.services.permissions import ensure_user_access, user_query_for, require
-from app.services import xray
+from app.services import xray, session_control
 from app.services.monitoring import block_session
 
 
@@ -22,11 +22,14 @@ def enforce_disconnect(db, users_and_ips):
     if not xray.xray_status()["running"]:
         raise HTTPException(503, "The local core is not running; no disconnection was performed.")
     with xray._control_lock:
+        if not session_control.available():
+            raise HTTPException(503, "Upgrade to the managed SpecterGate core for targeted disconnection. No core restart was performed.")
         for user, address in users_and_ips:
             block_session(db, user, address)
-        result = xray.apply_config(db)
-        if not result["ok"]:
-            raise HTTPException(503, "Core configuration could not be applied; disconnect was not confirmed.")
+        try:
+            session_control.sync(db)
+        except (grpc.RpcError, RuntimeError) as error:
+            raise HTTPException(503, "Disconnect could not be confirmed; the temporary block is saved for retry.") from error
 
 router = APIRouter(prefix="/monitoring", tags=["monitoring"])
 
@@ -34,7 +37,8 @@ router = APIRouter(prefix="/monitoring", tags=["monitoring"])
 @router.get("/status")
 def source_status(admin: Admin = Depends(require_permission("users.read"))):
     from app.services.monitoring import source_available
-    return {"available": xray.xray_status()["running"] and source_available(), "scope": "local-xray-public-ips"}
+    running = xray.xray_status()["running"]
+    return {"available": running and source_available(), "targeted_control": running and session_control.available(), "scope": "local-xray-public-ips"}
 
 
 @router.get("/speeds")
@@ -76,9 +80,8 @@ def terminate_single_session(
     ensure_user_access(db, admin, user)
     require(admin, "xray.manage")
     enforce_disconnect(db, [(user, session["client_ip"])])
-    found = terminate_session(session_id)
-    if not found:
-        raise HTTPException(status_code=404, detail="نشست متصل یافت نشد.")
+    # The authoritative refresh can remove the already-closed session first.
+    terminate_session(session_id)
     write_audit(
         db,
         admin,
@@ -88,7 +91,7 @@ def terminate_single_session(
         f"نشست متصل {session_id} قطع شد.",
         get_client_ip(request),
     )
-    return {"ok": True, "message": "User/IP blocked for 10 minutes; local core restarted, so other clients must reconnect."}
+    return {"ok": True, "message": "User/IP blocked for 10 minutes; matching flows closed without restarting the core."}
 
 
 @router.post("/users/{user_id}/terminate-sessions")

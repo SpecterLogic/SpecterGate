@@ -161,10 +161,6 @@ def blocks(db):
     return [row for row in entries if row["until"] > time.time()]
 
 
-def blocked_rules(db):
-    return [{"type": "field", "user": [row["user"]], "source": [row["ip"]], "outboundTag": "blocked"} for row in blocks(db)]
-
-
 def block_session(db, user, ip):
     from app.services.settings import set_setting
     address = str(ipaddress.ip_address(ip))
@@ -175,19 +171,23 @@ def block_session(db, user, ip):
 
 
 def refresh_from_core(db):
-    """Observe native online IPs, block excess IPs, and reconcile real rules.
-
-    IPs are not physical devices: NAT can merge devices, changing IPs can split
-    one device. Xray's public-IP online counter defines the measured population.
-    """
-    from app.services import xray_rpc
-    from app.models import VPNUser
+    """Read native logical flows; never restart the core to enforce IP limits."""
+    from app.services import session_control, xray_rpc
     global _last_core_poll
     try:
-        emails = xray_rpc.online_users()
-        observations = {email: {address.removeprefix("[").removesuffix("]"): timestamp for address, timestamp in xray_rpc.online_ips(email).items()} for email in emails}
-    except grpc.RpcError:
-        return False
+        session_control.sync(db)
+        snapshot = session_control.call("Snapshot")
+        observations = {}
+        for flow in snapshot["flows"]:
+            observations.setdefault(flow["user"], {})[flow["ip"]] = flow["since"]
+        emails = list(observations)
+    except (grpc.RpcError, RuntimeError):
+        # Legacy cores remain observable, but cannot enforce targeted limits.
+        try:
+            emails = xray_rpc.online_users()
+            observations = {email: {address.strip("[]"): timestamp for address, timestamp in xray_rpc.online_ips(email).items()} for email in emails}
+        except grpc.RpcError:
+            return False
     _last_core_poll = time.time()
     users = {user.uuid: user for user in db.query(VPNUser).filter(VPNUser.uuid.in_(emails)).all()}
     changed = False
@@ -202,29 +202,17 @@ def refresh_from_core(db):
         user = users.get(email)
         if user is None:
             continue
-        # Oldest admitted connections retain their slots.
-        admitted = 0
         for address, timestamp in sorted(ips.items(), key=lambda item: item[1]):
             try:
-                ipaddress.ip_address(address)
+                address = str(ipaddress.ip_address(address))
             except ValueError:
                 continue
             if (email, address) in excluded:
                 continue
-            if user.device_limit and admitted >= user.device_limit:
-                block_session(db, user, address)
-                with _lock:
-                    for sid, session in list(_active_sessions.items()):
-                        if session["user_id"] == user.id and session["client_ip"] == address:
-                            del _active_sessions[sid]
-                changed = True
-                continue
-            try:
-                register_user_session(db, user, address, "Xray native online IP")
-                admitted += 1
-            except HTTPException as error:
-                if error.status_code != 429:
-                    raise
-                block_session(db, user, address)
-                changed = True
+            # Observation must not enforce limits a second time in Python.
+            with _lock:
+                sid = next((sid for sid, row in _active_sessions.items() if row["user_id"] == user.id and row["client_ip"] == address), str(uuid.uuid4()))
+                previous = _active_sessions.get(sid, {})
+                now = datetime.now(timezone.utc)
+                _active_sessions[sid] = {"session_id": sid, "user_id": user.id, "username": user.username, "client_ip": address, "user_agent": "Xray native logical flow", "connected_at": previous.get("connected_at", now), "last_seen_at": now}
     return changed

@@ -63,7 +63,9 @@ def restart(
     admin: Admin = Depends(write_access),
 ):
     try:
-        xray_service.restart_process()
+        result = xray_service.apply_config(db)
+        if not result["ok"]:
+            return OperationResult(ok=False, message=result["message"])
     except RuntimeError as exc:
         return OperationResult(ok=False, message=str(exc))
     set_setting(db, 'xray_autostart', True)
@@ -155,7 +157,9 @@ def restart_all_services(
     admin: Admin = Depends(write_access),
 ):
     try:
-        xray_service.restart_process()
+        result = xray_service.apply_config(db)
+        if not result["ok"]:
+            return OperationResult(ok=False, message=result["message"])
     except Exception as exc:
         return OperationResult(ok=False, message=f"خطا در راه‌اندازی مجدد هسته: {exc}")
     write_audit(db, admin, "restart_xray", "xray", None, "راه‌اندازی مجدد هستهٔ محلی Xray", get_client_ip(request))
