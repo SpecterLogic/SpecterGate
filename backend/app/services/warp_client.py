@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import ipaddress
 from datetime import datetime, timezone
 from typing import Any
 
@@ -69,6 +70,8 @@ def register_warp_account(
                 resp = client.post(endpoint, json=payload, headers=headers)
                 if resp.status_code in (200, 201):
                     data = resp.json()
+                    if not isinstance(data, dict) or not data.get("id") or not data.get("token"):
+                        raise ValueError("Incomplete Cloudflare account response")
                     config = data.get("config", {})
                     interface = config.get("interface", {})
                     addresses_obj = interface.get("addresses", {})
@@ -81,22 +84,24 @@ def register_warp_account(
                     if v6:
                         addresses.append(v6 if "/" in v6 else f"{v6}/128")
                     if not addresses:
-                        addresses = ["172.16.0.2/32"]
+                        raise ValueError("Cloudflare did not assign interface addresses")
+                    for address in addresses:
+                        ipaddress.ip_interface(address)
 
                     # Reserved 3 bytes from client_id
                     client_id_raw = config.get("client_id", "")
-                    reserved = [0, 0, 0]
-                    if client_id_raw:
-                        try:
-                            decoded = base64.b64decode(client_id_raw)
-                            if len(decoded) >= 3:
-                                reserved = [int(b) for b in decoded[:3]]
-                        except Exception:
-                            pass
+                    decoded = base64.b64decode(client_id_raw, validate=True)
+                    if len(decoded) != 3:
+                        raise ValueError("Cloudflare did not return a valid client ID")
+                    reserved = list(decoded)
 
                     # Peer info
                     peers = config.get("peers", [])
-                    peer_pub = DEFAULT_CF_PUBLIC_KEY
+                    if not isinstance(peers, list) or not peers:
+                        raise ValueError("Cloudflare did not return a peer")
+                    peer_pub = peers[0].get("public_key", "")
+                    if len(base64.b64decode(peer_pub, validate=True)) != 32:
+                        raise ValueError("Invalid Cloudflare peer key")
                     resolved_endpoint = peer_endpoint
                     if peers and isinstance(peers, list):
                         p = peers[0]

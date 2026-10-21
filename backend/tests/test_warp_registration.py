@@ -72,3 +72,16 @@ def test_warp_auto_register_endpoint(client, auth, monkeypatch):
     monkeypatch.setattr("app.routers.routing.register_warp_account", lambda **kwargs: {"ok": False, "message": "Registration unavailable"})
     resp = client.post("/api/routing/warp/auto-register?allow_fallback=true", headers=auth)
     assert resp.status_code == 502
+
+
+def test_incomplete_success_response_is_not_a_registered_account(monkeypatch):
+    class Client:
+        def __init__(self, **kwargs): pass
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def post(self, *args, **kwargs):
+            return type("Response", (), {"status_code": 200, "json": lambda self: {"id": "id", "token": "token", "config": {}}})()
+    monkeypatch.setattr("httpx.Client", Client)
+    result = register_warp_account(allow_fallback=True)
+    assert result["ok"] is False
+    assert "warp_private_key" not in result
