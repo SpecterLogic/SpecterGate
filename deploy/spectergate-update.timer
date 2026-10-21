@@ -1,0 +1,10 @@
+[Unit]
+Description=Check SpecterGate update requests
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -201,6 +201,11 @@ class UserBase(BaseModel):
     data_limit_bytes: int | None = Field(default=None, ge=0)
     device_limit: int | None = Field(default=None, ge=1, le=100)
     expire_at: datetime | None = None
+    hwid_limit: int | None = Field(default=None, ge=1, le=100)
+    traffic_reset_days: int | None = Field(default=None, ge=1, le=365)
+    renewal_days: int | None = Field(default=None, ge=1, le=365)
+    renewal_remaining: int = Field(default=0, ge=0, le=120)
+
 
 
 class UserCreate(UserBase, ResourceAccessRequest):
@@ -219,6 +224,11 @@ class UserUpdate(ResourceAccessRequest):
     data_limit_bytes: int | None = Field(default=None, ge=0)
     device_limit: int | None = Field(default=None, ge=1, le=100)
     expire_at: datetime | None = None
+    hwid_limit: int | None = Field(default=None, ge=1, le=100)
+    traffic_reset_days: int | None = Field(default=None, ge=1, le=365)
+    renewal_days: int | None = Field(default=None, ge=1, le=365)
+    renewal_remaining: int = Field(default=0, ge=0, le=120)
+
     is_active: bool | None = None
     plan_id: int | None = None
     subscription_id: int | None = None
@@ -240,6 +250,11 @@ class UserOut(ResourceAccessRequest):
     upload_bytes: int
     download_bytes: int
     usage_percent: float
+    hwid_limit: int | None = None
+    traffic_reset_days: int | None = None
+    traffic_reset_at: datetime | None = None
+    renewal_days: int | None = None
+    renewal_remaining: int = 0
     device_limit: int | None
     expire_at: datetime | None
     last_online_at: datetime | None
@@ -270,6 +285,11 @@ class UserOut(ResourceAccessRequest):
             download_bytes=user.download_bytes,
             usage_percent=user.usage_percent,
             device_limit=user.device_limit,
+            hwid_limit=user.hwid_limit,
+            traffic_reset_days=user.traffic_reset_days,
+            traffic_reset_at=user.traffic_reset_at,
+            renewal_days=user.renewal_days,
+            renewal_remaining=user.renewal_remaining,
             expire_at=user.expire_at,
             last_online_at=user.last_online_at,
             note=user.note,
@@ -348,9 +368,10 @@ class NodeOut(BaseModel):
 
 # ---------- Inbounds ----------
 class InboundBase(BaseModel):
+    engine: Literal["xray", "singbox", "ssh", "mtg"] = "xray"
     node_id: int | None = None
     tag: str = Field(min_length=2, max_length=64, pattern=r"^[a-zA-Z0-9_.-]+$")
-    protocol: Literal["vless", "vmess", "trojan", "shadowsocks"] = "vless"
+    protocol: Literal["vless", "vmess", "trojan", "shadowsocks", "hysteria2", "tuic", "shadowtls", "ssh", "mtproto"] = "vless"
     listen: str = "0.0.0.0"
     port: int = Field(ge=1, le=65535)
     network: Literal["tcp", "ws", "grpc", "httpupgrade", "xhttp", "kcp"] = "tcp"
@@ -391,9 +412,10 @@ class InboundCreate(InboundBase):
 
 
 class InboundUpdate(BaseModel):
+    engine: Literal["xray", "singbox", "ssh", "mtg"] | None = None
     node_id: int | None = None
     tag: str | None = Field(default=None, min_length=2, max_length=64, pattern=r"^[a-zA-Z0-9_.-]+$")
-    protocol: Literal["vless", "vmess", "trojan", "shadowsocks"] | None = None
+    protocol: Literal["vless", "vmess", "trojan", "shadowsocks", "hysteria2", "tuic", "shadowtls", "ssh", "mtproto"] | None = None
     listen: str | None = None
     port: int | None = Field(default=None, ge=1, le=65535)
     network: Literal["tcp", "ws", "grpc", "httpupgrade", "xhttp", "kcp"] | None = None
@@ -424,6 +446,7 @@ class InboundUpdate(BaseModel):
 class InboundOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    engine: str = "xray"
     id: int
     node_id: int | None
     node_name: str | None = None

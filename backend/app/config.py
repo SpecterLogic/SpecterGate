@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "SpecterGate"
-    version: str = "0.1.0"
+    version: str = "0.2.0"
     debug: bool = False
     expose_api_docs: bool = False
     api_prefix: str = "/api"
@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     xray_config_path: str = str(BASE_DIR / "data" / "xray" / "config.json")
     xray_log_path: str = str(BASE_DIR / "data" / "xray" / "xray.log")
     xray_api_address: str = "127.0.0.1:10085"
+
+    singbox_binary: str = "sing-box"
+    mtg_binary: str = "mtg"
+    singbox_relay_port: int = 10087
+    singbox_config_path: str = str(BASE_DIR / "data" / "singbox" / "config.json")
 
     demo_data: bool = False
     dnstt_enabled: bool = False

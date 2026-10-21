@@ -1,0 +1,25 @@
+services:
+  db:
+    image: mariadb:11.4
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${SPECTERGATE_DB_ADMIN_PASSWORD:?Set a separate database administrator password}
+      MARIADB_DATABASE: spectergate
+      MARIADB_USER: spectergate
+      MARIADB_PASSWORD: ${SPECTERGATE_DB_PASSWORD:?Set SPECTERGATE_DB_PASSWORD}
+    volumes:
+      - spectergate_mariadb:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    security_opt: ["no-new-privileges:true"]
+  backend:
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SPECTERGATE_DATABASE_URL: mysql+pymysql://spectergate:${SPECTERGATE_DB_PASSWORD}@db:3306/spectergate?charset=utf8mb4
+volumes:
+  spectergate_mariadb:

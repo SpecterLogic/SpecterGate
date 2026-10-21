@@ -164,3 +164,40 @@ def restart_all_services(
         return OperationResult(ok=False, message=f"خطا در راه‌اندازی مجدد هسته: {exc}")
     write_audit(db, admin, "restart_xray", "xray", None, "راه‌اندازی مجدد هستهٔ محلی Xray", get_client_ip(request))
     return OperationResult(ok=True, message="هستهٔ محلی Xray راه‌اندازی مجدد شد.")
+
+
+@router.get("/singbox/status")
+def singbox_status(_: Admin = Depends(read_access)):
+    from app.services.singbox_runtime import status
+    return status()
+
+
+@router.post("/singbox/apply")
+def apply_singbox(request: Request, db: Session = Depends(get_db), admin: Admin = Depends(write_access)):
+    from app.services.singbox_runtime import apply
+    try:
+        result = apply(db)
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(503, str(exc)) from exc
+    set_setting(db, "singbox_enabled", True)
+    db.commit()
+    write_audit(db, admin, "apply_singbox", "core", None, "Sing-box configuration applied", get_client_ip(request))
+    return result
+
+
+@router.post("/singbox/stop")
+def stop_singbox(request: Request, db: Session = Depends(get_db), admin: Admin = Depends(write_access)):
+    from app.services.singbox_runtime import stop
+    set_setting(db, "singbox_enabled", False)
+    db.commit()
+    with xray_service._control_lock:
+        stop()
+    write_audit(db, admin, "stop_singbox", "core", None, "Sing-box stopped", get_client_ip(request))
+    return {"ok": True}
+
+
+@router.get("/auxiliary/status")
+def auxiliary_status(_: Admin = Depends(read_access)):
+    from app.services import ssh_runtime, mtproto_runtime
+    import shutil
+    return {"ssh_listeners": list(ssh_runtime.listeners), "ssh_errors": ssh_runtime.errors.copy(), "mtg_installed": bool(shutil.which(xray_service.settings.mtg_binary)), "mtg_running": [key for key,row in mtproto_runtime.processes.copy().items() if row[1].poll() is None], "mtg_errors":mtproto_runtime.errors.copy()}

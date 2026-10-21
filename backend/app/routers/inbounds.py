@@ -26,9 +26,34 @@ def _inbound_out(inbound: Inbound, node: Node | None) -> InboundOut:
     return result
 
 
-def _validate_target(db: Session, node_id: int | None) -> None:
+def _validate_target(db: Session, node_id: int | None, engine="xray") -> None:
+    if engine != "xray" and node_id is not None and (node := db.get(Node, node_id)) and not node.is_local:
+        raise HTTPException(422, "Sing-box currently requires the local managed node.")
     if node_id is not None and db.get(Node, node_id) is None:
         raise HTTPException(status_code=404, detail="نود انتخاب‌شده پیدا نشد.")
+
+
+def _validate_selected_user(db, actor, data):
+    from app.models import VPNUser
+    from app.services.inbound_options import options
+    from app.services.permissions import ensure_user_access
+    selected = options(SimpleNamespace(**data)).mtproto_user_id
+    if selected:
+        user = db.get(VPNUser, selected)
+        if not user:
+            raise HTTPException(422, "Selected MTProto user does not exist")
+        ensure_user_access(db, actor, user)
+
+
+def _prepare_engine_keys(data):
+    if data.get('engine') == 'singbox' and data.get('protocol') in {'shadowsocks','shadowtls'}:
+        from app.services.inbound_options import options
+        import base64
+        import secrets
+        advanced = options(SimpleNamespace(**data))
+        if not advanced.ss_server_key:
+            advanced.ss_server_key = base64.b64encode(secrets.token_bytes(32)).decode()
+            data['extra_json'] = advanced.model_dump_json()
 
 
 @router.get("", response_model=list[InboundOut])
@@ -39,6 +64,13 @@ def list_inbounds(db: Session = Depends(get_db), admin: Admin = Depends(read_acc
     if not has_permission(admin, "inbounds.manage"):
         for item in output:
             item.reality_private_key = None
+            if item.extra_json:
+                import json
+                from app.services.routing import redact_config
+                options = json.loads(item.extra_json)
+                if "vless_decryption" in options:
+                    options["vless_decryption"] = "[redacted]"
+                item.extra_json = json.dumps(redact_config(options))
     return output
 
 
@@ -51,8 +83,10 @@ def create_inbound(
 ):
     if db.query(Inbound).filter(Inbound.tag == payload.tag).first():
         raise HTTPException(status_code=409, detail="تگ اینباند تکراری است.")
-    _validate_target(db, payload.node_id)
+    _validate_target(db, payload.node_id, payload.engine)
     data = payload.model_dump()
+    _prepare_engine_keys(data)
+    _validate_selected_user(db, admin, data)
     try:
         validate_combination(SimpleNamespace(**data))
     except ValueError as exc:
@@ -112,6 +146,13 @@ def get_inbound(
     output = _inbound_out(inbound, db.get(Node, inbound.node_id) if inbound.node_id else None)
     if not has_permission(admin, "inbounds.manage"):
         output.reality_private_key = None
+        if output.extra_json:
+            import json
+            from app.services.routing import redact_config
+            options = json.loads(output.extra_json)
+            if "vless_decryption" in options:
+                options["vless_decryption"] = "[redacted]"
+            output.extra_json = json.dumps(redact_config(options))
     return output
 
 
@@ -127,10 +168,15 @@ def update_inbound(
     if not inbound:
         raise HTTPException(status_code=404, detail="اینباند پیدا نشد.")
     data = payload.model_dump(exclude_unset=True)
-    if any(value is None for key, value in data.items() if key in {'tag', 'protocol', 'listen', 'port', 'network', 'security', 'remark', 'is_active'}):
+    if any(value is None for key, value in data.items() if key in {'engine', 'tag', 'protocol', 'listen', 'port', 'network', 'security', 'remark', 'is_active'}):
         raise HTTPException(status_code=400, detail='Required inbound fields cannot be null.')
     merged = {key: getattr(inbound, key) for key in InboundCreate.model_fields}
     merged.update(data)
+    _prepare_engine_keys(merged)
+    if merged.get('extra_json') != inbound.extra_json:
+        data['extra_json'] = merged['extra_json']
+    _validate_selected_user(db, admin, merged)
+    _validate_target(db, merged["node_id"], merged["engine"])
     try:
         validate_combination(SimpleNamespace(**merged))
     except ValueError as exc:
@@ -294,3 +340,15 @@ def reset_inbound_traffic(
         get_client_ip(request),
     )
     return OperationResult(ok=True, message=f"ترافیک اینباند {inbound.tag} ریست شد.")
+
+
+@router.post("/crypto/{kind}")
+def generate_core_keys(kind: str, server_name: str = "example.com", _: Admin = Depends(write_access)):
+    import re
+    from app.services.core_crypto import generate
+    if kind not in {"vlessenc", "mldsa65", "ech"} or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.-]{0,252}",server_name):
+        raise HTTPException(422, "Invalid key type or server name")
+    try:
+        return generate(kind,server_name)
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(503,str(exc)) from exc

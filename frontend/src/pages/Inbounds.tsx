@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { t, tt } from "../lib/i18n";import { useMemo, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -20,9 +20,10 @@ import {
   Shield,
   Square,
   Trash2,
-  Wand2,
-} from "lucide-react";
+  Wand2 } from
+"lucide-react";
 import InboundAdvanced, { serializeAdvanced } from "../components/InboundAdvanced";
+import SingboxControl from "../components/SingboxControl";
 import { api } from "../lib/api";
 import { useToast } from "../lib/toast";
 import type { Inbound, Network as NetworkType, Node, Protocol, Security, XrayApplyResult, XrayStatus } from "../lib/types";
@@ -39,10 +40,11 @@ import {
   Select,
   Spinner,
   StatusBadge,
-  Toggle,
-} from "../components/UI";
+  Toggle } from
+"../components/UI";
 
 interface InboundForm {
+  engine: "xray" | "singbox" | "ssh" | "mtg";
   advanced: string;
   tag: string;
   remark: string;
@@ -72,6 +74,7 @@ interface InboundForm {
 }
 
 const EMPTY_FORM: InboundForm = {
+  engine: "xray",
   advanced: "{}",
   tag: "",
   remark: "",
@@ -97,7 +100,7 @@ const EMPTY_FORM: InboundForm = {
   isActive: true,
   dataLimitGb: "",
   expireAt: "",
-  resetIntervalDays: "",
+  resetIntervalDays: ""
 };
 
 function inboundToForm(inbound: Inbound): InboundForm {
@@ -105,6 +108,7 @@ function inboundToForm(inbound: Inbound): InboundForm {
     advanced: JSON.stringify({ ...JSON.parse(inbound.extra_json || "{}"), sockopt_enabled: !!JSON.parse(inbound.extra_json || "{}").sockopt }),
     tag: inbound.tag,
     remark: inbound.remark,
+    engine: inbound.engine || "xray",
     protocol: inbound.protocol,
     nodeId: inbound.node_id ? String(inbound.node_id) : "",
     port: String(inbound.port),
@@ -125,9 +129,9 @@ function inboundToForm(inbound: Inbound): InboundForm {
     tlsCertPath: inbound.tls_cert_path ?? "",
     tlsKeyPath: inbound.tls_key_path ?? "",
     isActive: inbound.is_active,
-    dataLimitGb: inbound.data_limit_bytes ? String(Math.round((inbound.data_limit_bytes / (1024 * 1024 * 1024)) * 10) / 10) : "",
+    dataLimitGb: inbound.data_limit_bytes ? String(Math.round(inbound.data_limit_bytes / (1024 * 1024 * 1024) * 10) / 10) : "",
     expireAt: inbound.expire_at ? inbound.expire_at.slice(0, 10) : "",
-    resetIntervalDays: inbound.reset_interval_days ? String(inbound.reset_interval_days) : "",
+    resetIntervalDays: inbound.reset_interval_days ? String(inbound.reset_interval_days) : ""
   };
 }
 
@@ -136,6 +140,7 @@ function toPayload(form: InboundForm): Record<string, unknown> {
     extra_json: serializeAdvanced(form.advanced),
     tag: form.tag.trim(),
     remark: form.remark.trim(),
+    engine: form.engine,
     protocol: form.protocol,
     node_id: form.nodeId ? Number(form.nodeId) : null,
     port: Number(form.port),
@@ -158,16 +163,16 @@ function toPayload(form: InboundForm): Record<string, unknown> {
     is_active: form.isActive,
     data_limit_bytes: form.dataLimitGb.trim() ? Math.round(parseFloat(form.dataLimitGb) * 1024 * 1024 * 1024) : null,
     expire_at: form.expireAt ? new Date(form.expireAt).toISOString() : null,
-    reset_interval_days: form.resetIntervalDays.trim() ? parseInt(form.resetIntervalDays) : null,
+    reset_interval_days: form.resetIntervalDays.trim() ? parseInt(form.resetIntervalDays) : null
   };
 }
 
-const PROTOCOLS: { value: Protocol; label: string }[] = [
-  { value: "vless", label: "VLESS" },
-  { value: "vmess", label: "VMess" },
-  { value: "trojan", label: "Trojan" },
-  { value: "shadowsocks", label: "Shadowsocks" },
-];
+const PROTOCOLS: {value: Protocol;label: string;}[] = [
+{ value: "vless", label: "VLESS" },
+{ value: "vmess", label: "VMess" },
+{ value: "trojan", label: "Trojan" },
+{ value: "shadowsocks", label: "Shadowsocks" }];
+
 
 export default function InboundsPage() {
   const toast = useToast();
@@ -184,21 +189,21 @@ export default function InboundsPage() {
 
   const inbounds = useQuery({
     queryKey: ["inbounds"],
-    queryFn: () => api.get<Inbound[]>("/api/inbounds"),
+    queryFn: () => api.get<Inbound[]>("/api/inbounds")
   });
   const nodes = useQuery({
     queryKey: ["nodes"],
-    queryFn: () => api.get<Node[]>("/api/nodes"),
+    queryFn: () => api.get<Node[]>("/api/nodes")
   });
   const xray = useQuery({
     queryKey: ["xray-status"],
     queryFn: () => api.get<XrayStatus>("/api/xray/status"),
-    refetchInterval: 30_000,
+    refetchInterval: 30_000
   });
   const preview = useQuery({
     queryKey: ["xray-config"],
-    queryFn: () => api.get<{ config: unknown; warnings: string[]; inbound_count: number; client_count: number }>("/api/xray/config"),
-    enabled: previewOpen,
+    queryFn: () => api.get<{config: unknown;warnings: string[];inbound_count: number;client_count: number;}>("/api/xray/config"),
+    enabled: previewOpen
   });
 
   const saveMutation = useMutation({
@@ -207,93 +212,93 @@ export default function InboundsPage() {
       return api.post<Inbound>("/api/inbounds", payload);
     },
     onSuccess: (inbound) => {
-      toast.success(editing ? "اینباند ذخیره شد." : `اینباند ${inbound.tag} ساخته شد.`);
+      toast.success(editing ? t("اینباند ذخیره شد.") : tt("اینباند {0} ساخته شد.", [inbound.tag]));
       setModalOpen(false);
       setEditing(null);
       setFormError("");
       queryClient.invalidateQueries({ queryKey: ["inbounds"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
-    onError: (error: Error) => setFormError(error.message),
+    onError: (error: Error) => setFormError(error.message)
   });
 
   const toggleMutation = useMutation({
     mutationFn: (inbound: Inbound) => api.patch<Inbound>(`/api/inbounds/${inbound.id}`, { is_active: !inbound.is_active }),
     onSuccess: () => {
-      toast.success("وضعیت اینباند تغییر کرد.");
+      toast.success(t("وضعیت اینباند تغییر کرد."));
       queryClient.invalidateQueries({ queryKey: ["inbounds"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
-    onError: (error: Error) => toast.error(error.message),
+    onError: (error: Error) => toast.error(error.message)
   });
 
   const resetTrafficMutation = useMutation({
     mutationFn: (inboundId: number) => api.post(`/api/inbounds/${inboundId}/reset-traffic`),
     onSuccess: () => {
-      toast.success("ترافیک اینباند با موفقیت ریست شد.");
+      toast.success(t("ترافیک اینباند با موفقیت ریست شد."));
       queryClient.invalidateQueries({ queryKey: ["inbounds"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
-    onError: (error: Error) => toast.error(error.message),
+    onError: (error: Error) => toast.error(error.message)
   });
 
   const bulkStatusMutation = useMutation({
     mutationFn: (active: boolean) => api.post("/api/inbounds/bulk/status", { inbound_ids: selectedIds, is_active: active }),
     onSuccess: () => {
-      toast.success("وضعیت اینباندهای انتخابی به‌روزرسانی شد.");
+      toast.success(t("وضعیت اینباندهای انتخابی به‌روزرسانی شد."));
       setSelectedIds([]);
       queryClient.invalidateQueries({ queryKey: ["inbounds"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
-    onError: (error: Error) => toast.error(error.message),
+    onError: (error: Error) => toast.error(error.message)
   });
 
   const bulkResetMutation = useMutation({
     mutationFn: () => api.post("/api/inbounds/bulk/reset-traffic", { inbound_ids: selectedIds }),
     onSuccess: () => {
-      toast.success("ترافیک اینباندهای انتخابی ریست شد.");
+      toast.success(t("ترافیک اینباندهای انتخابی ریست شد."));
       setSelectedIds([]);
       queryClient.invalidateQueries({ queryKey: ["inbounds"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
-    onError: (error: Error) => toast.error(error.message),
+    onError: (error: Error) => toast.error(error.message)
   });
 
   const bulkDeleteMutation = useMutation({
     mutationFn: () => api.post("/api/inbounds/bulk/delete", { inbound_ids: selectedIds }),
     onSuccess: () => {
-      toast.success("اینباندهای انتخابی حذف شدند.");
+      toast.success(t("اینباندهای انتخابی حذف شدند."));
       setSelectedIds([]);
       setBulkDeleteOpen(false);
       queryClient.invalidateQueries({ queryKey: ["inbounds"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
-    onError: (error: Error) => toast.error(error.message),
+    onError: (error: Error) => toast.error(error.message)
   });
 
   const deleteMutation = useMutation({
     mutationFn: (inbound: Inbound) => api.delete(`/api/inbounds/${inbound.id}`),
     onSuccess: () => {
-      toast.success("اینباند حذف شد.");
+      toast.success(t("اینباند حذف شد."));
       setDeleteTarget(null);
       queryClient.invalidateQueries({ queryKey: ["inbounds"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
-    onError: (error: Error) => toast.error(error.message),
+    onError: (error: Error) => toast.error(error.message)
   });
 
   const keysMutation = useMutation({
-    mutationFn: () => api.post<{ private_key: string; public_key: string; short_id: string }>("/api/xray/keys"),
+    mutationFn: () => api.post<{private_key: string;public_key: string;short_id: string;}>("/api/xray/keys"),
     onSuccess: (keys) => {
       setForm((current) => ({
         ...current,
         realityPrivateKey: keys.private_key,
         realityPublicKey: keys.public_key,
-        realityShortId: keys.short_id,
+        realityShortId: keys.short_id
       }));
-      toast.success("کلیدهای Reality تولید شد.");
+      toast.success(t("کلیدهای Reality تولید شد."));
     },
-    onError: (error: Error) => toast.error(error.message),
+    onError: (error: Error) => toast.error(error.message)
   });
 
   const applyMutation = useMutation({
@@ -303,14 +308,14 @@ export default function InboundsPage() {
       queryClient.invalidateQueries({ queryKey: ["xray-status"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
-    onError: (error: Error) => toast.error(error.message),
+    onError: (error: Error) => toast.error(error.message)
   });
 
   const localNode = useMemo(() => nodes.data?.find((node) => node.is_local), [nodes.data]);
   const activeCount = inbounds.data?.filter((inbound) => inbound.is_active).length ?? 0;
 
   function toggleSelect(id: number) {
-    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]));
+    setSelectedIds((prev) => prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]);
   }
 
   function selectAll() {
@@ -340,18 +345,18 @@ export default function InboundsPage() {
     event.preventDefault();
     setFormError("");
     if (!form.tag.trim() || !form.remark.trim()) {
-      setFormError("تگ و نام نمایشی اینباند الزامی است.");
+      setFormError(t("تگ و نام نمایشی اینباند الزامی است."));
       return;
     }
     const port = Number(form.port);
     if (!port || port < 1 || port > 65535) {
-      setFormError("پورت باید بین ۱ تا ۶۵۵۳۵ باشد.");
+      setFormError(t("پورت باید بین ۱ تا ۶۵۵۳۵ باشد."));
       return;
     }
     try {
       saveMutation.mutate(toPayload(form));
     } catch {
-      setFormError("تنظیمات پیشرفته اینباند نامعتبر است.");
+      setFormError(t("تنظیمات پیشرفته اینباند نامعتبر است."));
     }
   }
 
@@ -359,8 +364,10 @@ export default function InboundsPage() {
     setForm((current) => ({
       ...current,
       protocol,
-      security: protocol !== "vless" && current.security === "reality" ? "none" : current.security,
-      flow: protocol === "vless" && current.network === "tcp" && current.security !== "none" ? "xtls-rprx-vision" : "",
+      engine: protocol === "ssh" ? "ssh" : protocol === "mtproto" ? "mtg" : ["hysteria2", "tuic", "shadowtls"].includes(protocol) ? "singbox" : current.engine,
+      network: ["hysteria2", "tuic", "shadowtls", "ssh", "mtproto"].includes(protocol) ? "tcp" : current.network,
+      security: ["hysteria2", "tuic"].includes(protocol) ? "tls" : ["shadowtls", "ssh", "mtproto"].includes(protocol) ? "none" : protocol !== "vless" && current.security === "reality" ? "none" : current.security,
+      flow: protocol === "vless" && current.network === "tcp" && current.security !== "none" ? "xtls-rprx-vision" : ""
     }));
   }
 
@@ -372,28 +379,29 @@ export default function InboundsPage() {
       advanced: JSON.stringify({
         ...JSON.parse(current.advanced),
         ...(network === "kcp" ? { proxy_protocol: false } : {}),
-        ...(network !== "tcp" ? { tcp_http_obfuscation: false } : {}),
+        ...(network !== "tcp" ? { tcp_http_obfuscation: false } : {})
       }),
-      flow: current.protocol === "vless" && network === "tcp" && current.security === "reality" ? "xtls-rprx-vision" : "",
+      flow: current.protocol === "vless" && network === "tcp" && current.security === "reality" ? "xtls-rprx-vision" : ""
     }));
   }
 
   return (
     <div className="inbounds-page">
+      <SingboxControl />
       <div className="page-intro">
         <div>
-          <p className="eyebrow">قابلیت‌های ارتباطی</p>
-          <h2>اینباندها و پروتکل‌ها</h2>
+          <p className="eyebrow">{t("قابلیت‌های ارتباطی")}</p>
+          <h2>{t("اینباندها و پروتکل‌ها")}</h2>
           <p className="page-subtitle">
-            {formatNumber(activeCount)} مسیر فعال از {formatNumber(inbounds.data?.length ?? 0)} اینباند پیکربندی‌شده.
+            {formatNumber(activeCount)}{" " + t("مسیر فعال از") + " "}{formatNumber(inbounds.data?.length ?? 0)}{" " + t("اینباند پیکربندی‌شده.") + " "}
           </p>
         </div>
         <div className="page-actions">
-          <Button variant="outline" icon={<FileJson size={16} />} onClick={() => setPreviewOpen(true)}>
-            پیش‌نمایش کانفیگ
+          <Button variant="outline" icon={<FileJson size={16} />} onClick={() => setPreviewOpen(true)}>{"" + t("پیش‌نمایش کانفیگ") + " "}
+
           </Button>
-          <Button icon={<Plus size={17} />} onClick={openCreate}>
-            اینباند جدید
+          <Button icon={<Plus size={17} />} onClick={openCreate}>{"" + t("اینباند جدید") + " "}
+
           </Button>
         </div>
       </div>
@@ -404,100 +412,100 @@ export default function InboundsPage() {
             <Play size={18} />
           </span>
           <div>
-            <strong>{xray.data?.running ? "سرویس Xray در حال اجرا است" : "سرویس Xray متوقف است"}</strong>
-            <span>{xray.data?.message ?? "در حال دریافت وضعیت..."}</span>
+            <strong>{xray.data?.running ? t("سرویس Xray در حال اجرا است") : t("سرویس Xray متوقف است")}</strong>
+            <span>{xray.data?.message ?? t("در حال دریافت وضعیت...")}</span>
           </div>
         </div>
         <div className="xray-banner-actions">
-          <Button variant="ghost" size="sm" onClick={() => xray.refetch()} loading={xray.isFetching} icon={<RefreshCw size={15} />}>
-            وضعیت
+          <Button variant="ghost" size="sm" onClick={() => xray.refetch()} loading={xray.isFetching} icon={<RefreshCw size={15} />}>{"" + t("وضعیت") + " "}
+
           </Button>
           <Button
             size="sm"
             variant={xray.data?.running ? "outline" : "primary"}
             loading={applyMutation.isPending}
             onClick={() => applyMutation.mutate()}
-            icon={<Wand2 size={15} />}
-          >
-            اعمال کانفیگ
+            icon={<Wand2 size={15} />}>{"" + t("اعمال کانفیگ") + " "}
+
+
           </Button>
         </div>
       </Card>
 
       {/* Bulk actions bar */}
-      {selectedIds.length > 0 && (
-        <div className="card bulk-actions-bar" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 18px", marginBottom: "16px" }}>
+      {selectedIds.length > 0 &&
+      <div className="card bulk-actions-bar" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 18px", marginBottom: "16px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <Badge tone="violet">{formatNumber(selectedIds.length)} اینباند انتخاب‌شده</Badge>
-            <Button size="sm" variant="ghost" onClick={() => setSelectedIds([])}>
-              لغو انتخاب
-            </Button>
+            <Badge tone="violet">{formatNumber(selectedIds.length)}{" " + t("اینباند انتخاب‌شده") + ""}</Badge>
+            <Button size="sm" variant="ghost" onClick={() => setSelectedIds([])}>{"" + t("لغو انتخاب") + " "}
+
+          </Button>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <Button size="sm" variant="outline" icon={<Power size={14} />} loading={bulkStatusMutation.isPending} onClick={() => bulkStatusMutation.mutate(true)}>
-              فعال‌سازی
-            </Button>
-            <Button size="sm" variant="outline" icon={<Power size={14} />} loading={bulkStatusMutation.isPending} onClick={() => bulkStatusMutation.mutate(false)}>
-              غیرفعال‌سازی
-            </Button>
-            <Button size="sm" variant="outline" icon={<RotateCcw size={14} />} loading={bulkResetMutation.isPending} onClick={() => bulkResetMutation.mutate()}>
-              ریست ترافیک
-            </Button>
-            <Button size="sm" variant="danger" icon={<Trash2 size={14} />} onClick={() => setBulkDeleteOpen(true)}>
-              حذف گروهی
-            </Button>
+            <Button size="sm" variant="outline" icon={<Power size={14} />} loading={bulkStatusMutation.isPending} onClick={() => bulkStatusMutation.mutate(true)}>{"" + t("فعال‌سازی") + " "}
+
+          </Button>
+            <Button size="sm" variant="outline" icon={<Power size={14} />} loading={bulkStatusMutation.isPending} onClick={() => bulkStatusMutation.mutate(false)}>{"" + t("غیرفعال‌سازی") + " "}
+
+          </Button>
+            <Button size="sm" variant="outline" icon={<RotateCcw size={14} />} loading={bulkResetMutation.isPending} onClick={() => bulkResetMutation.mutate()}>{"" + t("ریست ترافیک") + " "}
+
+          </Button>
+            <Button size="sm" variant="danger" icon={<Trash2 size={14} />} onClick={() => setBulkDeleteOpen(true)}>{"" + t("حذف گروهی") + " "}
+
+          </Button>
           </div>
         </div>
-      )}
+      }
 
-      {inbounds.isLoading ? (
-        <Card>
+      {inbounds.isLoading ?
+      <Card>
           <Spinner />
-        </Card>
-      ) : inbounds.isError ? (
-        <Card>
+        </Card> :
+      inbounds.isError ?
+      <Card>
           <EmptyState
-            icon={<Boxes size={24} />}
-            title="دریافت اینباندها ناموفق بود"
-            description={(inbounds.error as Error).message}
-            action={<Button onClick={() => inbounds.refetch()}>تلاش دوباره</Button>}
-          />
-        </Card>
-      ) : (inbounds.data?.length ?? 0) === 0 ? (
-        <Card>
+          icon={<Boxes size={24} />}
+          title={t("دریافت اینباندها ناموفق بود")}
+          description={(inbounds.error as Error).message}
+          action={<Button onClick={() => inbounds.refetch()}>{t("تلاش دوباره")}</Button>} />
+
+        </Card> :
+      (inbounds.data?.length ?? 0) === 0 ?
+      <Card>
           <EmptyState
-            icon={<Boxes size={26} />}
-            title="هنوز اینباندی ندارید"
-            description="یک مسیر VLESS Reality یا VMess WebSocket بسازید تا کاربران بتوانند متصل شوند."
-            action={
-              <Button icon={<Plus size={16} />} onClick={openCreate}>
-                ساخت اولین اینباند
-              </Button>
-            }
-          />
-        </Card>
-      ) : (
-        <>
+          icon={<Boxes size={26} />}
+          title={t("هنوز اینباندی ندارید")}
+          description={t("یک مسیر VLESS Reality یا VMess WebSocket بسازید تا کاربران بتوانند متصل شوند.")}
+          action={
+          <Button icon={<Plus size={16} />} onClick={openCreate}>{"" + t("ساخت اولین اینباند") + " "}
+
+          </Button>
+          } />
+
+        </Card> :
+
+      <>
           <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "8px" }}>
             <Button variant="ghost" size="sm" icon={selectedIds.length === inbounds.data?.length ? <CheckSquare size={15} /> : <Square size={15} />} onClick={selectAll}>
-              {selectedIds.length === inbounds.data?.length ? "لغو انتخاب همه" : "انتخاب همه"}
+              {selectedIds.length === inbounds.data?.length ? t("لغو انتخاب همه") : t("انتخاب همه")}
             </Button>
           </div>
 
           <div className="inbound-grid">
             {inbounds.data?.map((inbound) => {
-              const isSelected = selectedIds.includes(inbound.id);
-              const status = inbound.status || (inbound.is_active ? "active" : "disabled");
-              return (
-                <Card key={inbound.id} className={cn("inbound-card", !inbound.is_active && "is-inactive", isSelected && "border-primary")}>
+            const isSelected = selectedIds.includes(inbound.id);
+            const status = inbound.status || (inbound.is_active ? "active" : "disabled");
+            return (
+              <Card key={inbound.id} className={cn("inbound-card", !inbound.is_active && "is-inactive", isSelected && "border-primary")}>
                   <div className="inbound-head">
                     <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => toggleSelect(inbound.id)}
-                      style={{ cursor: "pointer", width: "16px", height: "16px" }}
-                      aria-label="انتخاب اینباند"
-                    />
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={() => toggleSelect(inbound.id)}
+                    style={{ cursor: "pointer", width: "16px", height: "16px" }}
+                    aria-label={t("انتخاب اینباند")} />
+
                     <span className={cn("protocol-mark", `protocol-${inbound.protocol}`)}>
                       {inbound.protocol === "shadowsocks" ? "SS" : inbound.protocol.toUpperCase()}
                     </span>
@@ -507,21 +515,21 @@ export default function InboundsPage() {
                         {inbound.tag} · :{inbound.port}
                       </span>
                     </div>
-                    {status === "active" ? (
-                      <Badge tone="success">فعال</Badge>
-                    ) : status === "expired" ? (
-                      <Badge tone="danger">منقضی‌شده</Badge>
-                    ) : status === "limited" ? (
-                      <Badge tone="warning">سقف ترافیک</Badge>
-                    ) : (
-                      <Badge tone="neutral">غیرفعال</Badge>
-                    )}
+                    {status === "active" ?
+                  <Badge tone="success">{t("فعال")}</Badge> :
+                  status === "expired" ?
+                  <Badge tone="danger">{t("منقضی‌شده")}</Badge> :
+                  status === "limited" ?
+                  <Badge tone="warning">{t("سقف ترافیک")}</Badge> :
+
+                  <Badge tone="neutral">{t("غیرفعال")}</Badge>
+                  }
                   </div>
 
                   <div className="inbound-tags">
                     <Badge tone="info">{protocolLabel(inbound.protocol)}</Badge>
                     <Badge tone={inbound.security === "reality" ? "violet" : inbound.security === "tls" ? "success" : "neutral"}>
-                      {inbound.security === "none" ? "بدون امنیت" : inbound.security.toUpperCase()}
+                      {inbound.security === "none" ? t("بدون امنیت") : inbound.security.toUpperCase()}
                     </Badge>
                     <Badge tone="neutral">{inbound.network}</Badge>
                   </div>
@@ -529,8 +537,8 @@ export default function InboundsPage() {
                   <div className="inbound-specs">
                     <div>
                       <span>
-                        <Server size={13} /> نود
-                      </span>
+                        <Server size={13} />{" " + t("نود") + " "}
+                    </span>
                       <strong>{inbound.node_name ?? "Local"}</strong>
                     </div>
                     <div>
@@ -541,155 +549,156 @@ export default function InboundsPage() {
                     </div>
                     <div>
                       <span>
-                        <Network size={13} /> مسیر
-                      </span>
+                        <Network size={13} />{" " + t("مسیر") + " "}
+                    </span>
                       <strong dir="ltr">{inbound.network === "grpc" ? inbound.service_name : inbound.path || "—"}</strong>
                     </div>
                     <div>
                       <span>
-                        <Shield size={13} /> مصرف / سقف
-                      </span>
+                        <Shield size={13} />{" " + t("مصرف / سقف") + " "}
+                    </span>
                       <strong>
                         {formatBytes(inbound.total_bytes)}
-                        {inbound.data_limit_bytes ? ` / ${formatBytes(inbound.data_limit_bytes)}` : " (نامحدود)"}
+                        {inbound.data_limit_bytes ? ` / ${formatBytes(inbound.data_limit_bytes)}` : t(" (نامحدود)")}
                       </strong>
                     </div>
                   </div>
 
                   {/* Traffic limit progress bar if quota set */}
-                  {inbound.data_limit_bytes && inbound.data_limit_bytes > 0 && (
-                    <div style={{ marginTop: "8px" }}>
+                  {inbound.data_limit_bytes && inbound.data_limit_bytes > 0 &&
+                <div style={{ marginTop: "8px" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", color: "var(--color-text-secondary, #9ca3af)", marginBottom: "4px" }}>
-                        <span>درصد مصرف سقف ترافیک</span>
+                        <span>{t("درصد مصرف سقف ترافیک")}</span>
                         <span>{inbound.usage_percent ?? 0}%</span>
                       </div>
                       <div style={{ width: "100%", height: "6px", backgroundColor: "#374151", borderRadius: "3px", overflow: "hidden" }}>
                         <div
-                          style={{
-                            width: `${Math.min(100, inbound.usage_percent ?? 0)}%`,
-                            height: "100%",
-                            backgroundColor: (inbound.usage_percent ?? 0) >= 90 ? "#ef4444" : (inbound.usage_percent ?? 0) >= 75 ? "#f59e0b" : "#10b981",
-                            transition: "width 0.3s ease",
-                          }}
-                        />
+                      style={{
+                        width: `${Math.min(100, inbound.usage_percent ?? 0)}%`,
+                        height: "100%",
+                        backgroundColor: (inbound.usage_percent ?? 0) >= 90 ? "#ef4444" : (inbound.usage_percent ?? 0) >= 75 ? "#f59e0b" : "#10b981",
+                        transition: "width 0.3s ease"
+                      }} />
+
                       </div>
                     </div>
-                  )}
+                }
 
                   {/* Expiration and Reset Info */}
-                  {(inbound.expire_at || inbound.reset_interval_days) && (
-                    <div style={{ display: "flex", gap: "12px", fontSize: "11px", color: "var(--color-text-secondary, #9ca3af)", marginTop: "6px" }}>
-                      {inbound.expire_at && (
-                        <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                          <Calendar size={12} /> انقضا: {new Date(inbound.expire_at).toLocaleDateString("fa-IR")}
+                  {(inbound.expire_at || inbound.reset_interval_days) &&
+                <div style={{ display: "flex", gap: "12px", fontSize: "11px", color: "var(--color-text-secondary, #9ca3af)", marginTop: "6px" }}>
+                      {inbound.expire_at &&
+                  <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                          <Calendar size={12} />{" " + t("انقضا:") + " "}{new Date(inbound.expire_at).toLocaleDateString("fa-IR")}
                         </span>
-                      )}
-                      {inbound.reset_interval_days && (
-                        <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                          <RotateCcw size={12} /> ریست خودکار: هر {inbound.reset_interval_days} روز
-                        </span>
-                      )}
+                  }
+                      {inbound.reset_interval_days &&
+                  <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                          <RotateCcw size={12} />{" " + t("ریست خودکار: هر") + " "}{inbound.reset_interval_days}{" " + t("روز") + " "}
+                  </span>
+                  }
                     </div>
-                  )}
+                }
 
-                  {inbound.security === "reality" && (
-                    <div className="reality-strip" dir="ltr">
+                  {inbound.security === "reality" &&
+                <div className="reality-strip" dir="ltr">
                       <KeyRound size={13} />
-                      <span>{inbound.reality_public_key || "بدون کلید عمومی"}</span>
+                      <span>{inbound.reality_public_key || t("بدون کلید عمومی")}</span>
                       <span className="short-id">{inbound.reality_short_id}</span>
                     </div>
-                  )}
+                }
 
                   <div className="inbound-actions">
-                    <Button variant="ghost" size="sm" icon={<Pencil size={15} />} onClick={() => openEdit(inbound)}>
-                      ویرایش
+                    <Button variant="ghost" size="sm" icon={<Pencil size={15} />} onClick={() => openEdit(inbound)}>{"" + t("ویرایش") + " "}
+
+                  </Button>
+                    <Button
+                    variant="ghost"
+                    size="sm"
+                    icon={<Power size={15} />}
+                    onClick={() => toggleMutation.mutate(inbound)}>
+
+                      {inbound.is_active ? t("غیرفعال") : t("فعال")}
                     </Button>
                     <Button
-                      variant="ghost"
-                      size="sm"
-                      icon={<Power size={15} />}
-                      onClick={() => toggleMutation.mutate(inbound)}
-                    >
-                      {inbound.is_active ? "غیرفعال" : "فعال"}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      icon={<RotateCcw size={14} />}
-                      title="ریست ترافیک مصرفی اینباند"
-                      onClick={() => resetTrafficMutation.mutate(inbound.id)}
-                    >
-                      ریست
-                    </Button>
-                    <button type="button" className="icon-btn danger-hover" title="حذف" onClick={() => setDeleteTarget(inbound)}>
+                    variant="ghost"
+                    size="sm"
+                    icon={<RotateCcw size={14} />}
+                    title={t("ریست ترافیک مصرفی اینباند")}
+                    onClick={() => resetTrafficMutation.mutate(inbound.id)}>{"" + t("ریست") + " "}
+
+
+                  </Button>
+                    <button type="button" className="icon-btn danger-hover" title={t("حذف")} onClick={() => setDeleteTarget(inbound)}>
                       <Trash2 size={16} />
                     </button>
                   </div>
-                </Card>
-              );
-            })}
+                </Card>);
+
+          })}
           </div>
         </>
-      )}
+      }
 
       {/* Inbound Create / Edit Modal */}
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title={editing ? `ویرایش ${editing.tag}` : "ساخت اینباند جدید"}
-        description="تنظیمات ارتباطی را مشخص کنید. تغییرات پس از «اعمال کانفیگ» روی هسته اعمال می‌شوند."
+        title={editing ? tt("ویرایش {0}", [editing.tag]) : t("ساخت اینباند جدید")}
+        description={t("تنظیمات ارتباطی را مشخص کنید. تغییرات پس از «اعمال کانفیگ» روی هسته اعمال می‌شوند.")}
         wide
         footer={
-          <>
-            <Button variant="ghost" onClick={() => setModalOpen(false)}>
-              انصراف
-            </Button>
+        <>
+            <Button variant="ghost" onClick={() => setModalOpen(false)}>{"" + t("انصراف") + " "}
+
+          </Button>
             <Button type="submit" form="inbound-form" loading={saveMutation.isPending}>
-              {editing ? "ذخیره اینباند" : "ساخت اینباند"}
+              {editing ? t("ذخیره اینباند") : t("ساخت اینباند")}
             </Button>
           </>
-        }
-      >
+        }>
+
         <form id="inbound-form" onSubmit={submit} className="form-grid">
-          <Field label="نام نمایشی">
+          <Field label={t("نام نمایشی")}>
             <Input
               value={form.remark}
               onChange={(event) => setForm({ ...form, remark: event.target.value })}
               placeholder="Reality – Frankfurt"
-              required
-            />
+              required />
+
           </Field>
-          <Field label="تگ یکتا" hint="در کانفیگ Xray استفاده می‌شود">
+          <Field label={t("تگ یکتا")} hint={t("در کانفیگ Xray استفاده می‌شود")}>
             <Input
               value={form.tag}
               onChange={(event) => setForm({ ...form, tag: event.target.value })}
               placeholder="vless-reality-de"
               dir="ltr"
-              required
-            />
+              required />
+
           </Field>
 
-          <Field label="پروتکل">
+          <Field label={t("پروتکل")}>
             <Select value={form.protocol} onChange={(event) => changeProtocol(event.target.value as Protocol)}>
-              {PROTOCOLS.map((item) => (
-                <option key={item.value} value={item.value}>
+              {[...PROTOCOLS, { value: "hysteria2", label: "Hysteria2" }, { value: "tuic", label: "TUIC v5" }, { value: "shadowtls", label: "ShadowTLS v3" }, { value: "ssh", label: "SSH Tunnel" }, { value: "mtproto", label: "Telegram MTProto" }].map((item) =>
+              <option key={item.value} value={item.value}>
                   {item.label}
                 </option>
-              ))}
+              )}
             </Select>
           </Field>
-          <Field label="نود میزبان">
+          <Field label={t("هستهٔ اجرا")} hint={t("Sing-box فعلاً روی نود محلی اجرا می‌شود؛ برای Hysteria2/TUIC گواهی TLS معتبر انتخاب کنید.")}><Select value={form.engine} onChange={(e) => setForm({ ...form, engine: e.target.value as InboundForm['engine'] })}><option value="xray">Xray</option><option value="singbox">Sing-box</option><option value="ssh">SSH Tunnel</option><option value="mtg">MTG / Telegram</option></Select></Field>
+          <Field label={t("نود میزبان")}>
             <Select value={form.nodeId} onChange={(event) => setForm({ ...form, nodeId: event.target.value })}>
-              <option value="">نود محلی</option>
-              {nodes.data?.map((node) => (
-                <option key={node.id} value={node.id}>
-                  {node.name} {node.is_local ? "(محلی)" : ""}
+              <option value="">{t("نود محلی")}</option>
+              {nodes.data?.map((node) =>
+              <option key={node.id} value={node.id}>
+                  {node.name} {node.is_local ? t("(محلی)") : ""}
                 </option>
-              ))}
+              )}
             </Select>
           </Field>
 
-          <Field label="پورت">
+          <Field label={t("پورت")}>
             <Input
               type="number"
               min="1"
@@ -697,18 +706,18 @@ export default function InboundsPage() {
               value={form.port}
               onChange={(event) => setForm({ ...form, port: event.target.value })}
               dir="ltr"
-              required
-            />
+              required />
+
           </Field>
-          <Field label="آدرس شنود">
+          <Field label={t("آدرس شنود")}>
             <Input
               value={form.listen}
               onChange={(event) => setForm({ ...form, listen: event.target.value })}
-              dir="ltr"
-            />
+              dir="ltr" />
+
           </Field>
 
-          <Field label="شبکه">
+          <Field label={t("شبکه")}>
             <Select value={form.network} onChange={(event) => changeNetwork(event.target.value as NetworkType)}>
               <option value="tcp">RAW / TCP</option>
               <option value="kcp">mKCP (UDP)</option>
@@ -718,7 +727,7 @@ export default function InboundsPage() {
               <option value="xhttp">XHTTP</option>
             </Select>
           </Field>
-          <Field label="لایه امنیتی">
+          <Field label={t("لایه امنیتی")}>
             <Select
               value={form.security}
               onChange={(event) => {
@@ -727,194 +736,194 @@ export default function InboundsPage() {
                   ...form,
                   security,
                   flow:
-                    security === "reality" && form.protocol === "vless" && form.network === "tcp"
-                      ? "xtls-rprx-vision"
-                      : "",
+                  security === "reality" && form.protocol === "vless" && form.network === "tcp" ?
+                  "xtls-rprx-vision" :
+                  ""
                 });
-              }}
-            >
+              }}>
+
               <option value="reality" disabled={form.protocol !== "vless" || !["tcp", "grpc", "xhttp"].includes(form.network)}>
                 Reality
               </option>
               <option value="tls">TLS</option>
-              <option value="none">بدون امنیت</option>
+              <option value="none">{t("بدون امنیت")}</option>
             </Select>
           </Field>
 
           {/* Traffic Limit and Expiration Inputs */}
-          <Field label="سقف حجم اینباند (گیگابایت)" hint="خالی = ترافیک نامحدود">
+          <Field label={t("سقف حجم اینباند (گیگابایت)")} hint={t("خالی = ترافیک نامحدود")}>
             <Input
               type="number"
               step="0.5"
               min="0"
               value={form.dataLimitGb}
               onChange={(event) => setForm({ ...form, dataLimitGb: event.target.value })}
-              placeholder="مثلاً ۱۰۰۰ برای ۱ ترابایت"
-              dir="ltr"
-            />
+              placeholder={t("مثلاً ۱۰۰۰ برای ۱ ترابایت")}
+              dir="ltr" />
+
           </Field>
 
-          <Field label="تاریخ انقضای اینباند" hint="خالی = بدون تاریخ انقضا">
+          <Field label={t("تاریخ انقضای اینباند")} hint={t("خالی = بدون تاریخ انقضا")}>
             <Input
               type="date"
               value={form.expireAt}
               onChange={(event) => setForm({ ...form, expireAt: event.target.value })}
-              dir="ltr"
-            />
+              dir="ltr" />
+
           </Field>
 
-          <Field label="دوره ریست خودکار ترافیک (روز)" hint="مثلاً ۳۰ برای ریست ماهانه، خالی = غیرفعال">
+          <Field label={t("دوره ریست خودکار ترافیک (روز)")} hint={t("مثلاً ۳۰ برای ریست ماهانه، خالی = غیرفعال")}>
             <Input
               type="number"
               min="1"
               max="365"
               value={form.resetIntervalDays}
               onChange={(event) => setForm({ ...form, resetIntervalDays: event.target.value })}
-              placeholder="مثلاً ۳۰"
-              dir="ltr"
-            />
+              placeholder={t("مثلاً ۳۰")}
+              dir="ltr" />
+
           </Field>
 
-          {form.security !== "none" && (
-            <Field label="SNI">
+          {form.security !== "none" &&
+          <Field label="SNI">
               <Input
-                value={form.sni}
-                onChange={(event) => setForm({ ...form, sni: event.target.value })}
-                placeholder="www.cloudflare.com"
-                dir="ltr"
-              />
+              value={form.sni}
+              onChange={(event) => setForm({ ...form, sni: event.target.value })}
+              placeholder="www.cloudflare.com"
+              dir="ltr" />
+
             </Field>
-          )}
-          {form.security === "reality" && (
-            <>
-              <Field label="مقصد Reality" hint="مثلاً www.cloudflare.com:443">
+          }
+          {form.security === "reality" &&
+          <>
+              <Field label={t("مقصد Reality")} hint={t("مثلاً www.cloudflare.com:443")}>
                 <Input
-                  value={form.realityDest}
-                  onChange={(event) => setForm({ ...form, realityDest: event.target.value })}
-                  dir="ltr"
-                />
+                value={form.realityDest}
+                onChange={(event) => setForm({ ...form, realityDest: event.target.value })}
+                dir="ltr" />
+
               </Field>
-              <Field label="Flow" hint="برای VLESS روی TCP معمولاً vision">
+              <Field label="Flow" hint={t("برای VLESS روی TCP معمولاً vision")}>
                 <Input
-                  value={form.flow}
-                  onChange={(event) => setForm({ ...form, flow: event.target.value })}
-                  dir="ltr"
-                />
+                value={form.flow}
+                onChange={(event) => setForm({ ...form, flow: event.target.value })}
+                dir="ltr" />
+
               </Field>
               <div className="key-box field-span-2">
                 <div className="key-box-head">
                   <div>
-                    <strong>کلیدهای Reality</strong>
-                    <span>اگر خالی بمانند، هنگام ذخیره خودکار تولید می‌شوند.</span>
+                    <strong>{t("کلیدهای Reality")}</strong>
+                    <span>{t("اگر خالی بمانند، هنگام ذخیره خودکار تولید می‌شوند.")}</span>
                   </div>
                   <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    icon={<KeyRound size={15} />}
-                    loading={keysMutation.isPending}
-                    onClick={() => keysMutation.mutate()}
-                  >
-                    تولید کلید
-                  </Button>
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  icon={<KeyRound size={15} />}
+                  loading={keysMutation.isPending}
+                  onClick={() => keysMutation.mutate()}>{"" + t("تولید کلید") + " "}
+
+
+                </Button>
                 </div>
                 <div className="form-grid key-grid">
                   <Field label="Public Key">
                     <Input
-                      value={form.realityPublicKey}
-                      onChange={(event) => setForm({ ...form, realityPublicKey: event.target.value })}
-                      dir="ltr"
-                      placeholder="خودکار"
-                    />
+                    value={form.realityPublicKey}
+                    onChange={(event) => setForm({ ...form, realityPublicKey: event.target.value })}
+                    dir="ltr"
+                    placeholder={t("خودکار")} />
+
                   </Field>
                   <Field label="Private Key">
                     <Input
-                      type="password"
-                      autoComplete="new-password"
-                      value={form.realityPrivateKey}
-                      onChange={(event) => setForm({ ...form, realityPrivateKey: event.target.value })}
-                      dir="ltr"
-                      placeholder="خودکار"
-                    />
+                    type="password"
+                    autoComplete="new-password"
+                    value={form.realityPrivateKey}
+                    onChange={(event) => setForm({ ...form, realityPrivateKey: event.target.value })}
+                    dir="ltr"
+                    placeholder={t("خودکار")} />
+
                   </Field>
                   <Field label="Short ID">
                     <Input
-                      value={form.realityShortId}
-                      onChange={(event) => setForm({ ...form, realityShortId: event.target.value })}
-                      dir="ltr"
-                      placeholder="خودکار"
-                    />
+                    value={form.realityShortId}
+                    onChange={(event) => setForm({ ...form, realityShortId: event.target.value })}
+                    dir="ltr"
+                    placeholder={t("خودکار")} />
+
                   </Field>
                 </div>
               </div>
             </>
-          )}
+          }
 
-          {form.security === "tls" && (
-            <>
-              <Field label="پروانه TLS (مسیر)">
+          {form.security === "tls" &&
+          <>
+              <Field label={t("پروانه TLS (مسیر)")}>
                 <Input
-                  value={form.tlsCertPath}
-                  onChange={(event) => setForm({ ...form, tlsCertPath: event.target.value })}
-                  placeholder="/etc/ssl/fullchain.pem"
-                  dir="ltr"
-                />
+                value={form.tlsCertPath}
+                onChange={(event) => setForm({ ...form, tlsCertPath: event.target.value })}
+                placeholder="/etc/ssl/fullchain.pem"
+                dir="ltr" />
+
               </Field>
-              <Field label="کلید TLS (مسیر)">
+              <Field label={t("کلید TLS (مسیر)")}>
                 <Input
-                  value={form.tlsKeyPath}
-                  onChange={(event) => setForm({ ...form, tlsKeyPath: event.target.value })}
-                  placeholder="/etc/ssl/privkey.pem"
-                  dir="ltr"
-                />
+                value={form.tlsKeyPath}
+                onChange={(event) => setForm({ ...form, tlsKeyPath: event.target.value })}
+                placeholder="/etc/ssl/privkey.pem"
+                dir="ltr" />
+
               </Field>
-              <Field label="ALPN" hint="برای TLS مثلاً h2,http/1.1">
+              <Field label="ALPN" hint={t("برای TLS مثلاً h2,http/1.1")}>
                 <Input value={form.alpn} onChange={(event) => setForm({ ...form, alpn: event.target.value })} dir="ltr" />
               </Field>
             </>
-          )}
+          }
 
-          {(form.network === "ws" || form.network === "httpupgrade" || form.network === "xhttp") && (
-            <>
-              <Field label="Host هدر">
+          {(form.network === "ws" || form.network === "httpupgrade" || form.network === "xhttp") &&
+          <>
+              <Field label={t("Host هدر")}>
                 <Input
-                  value={form.host}
-                  onChange={(event) => setForm({ ...form, host: event.target.value })}
-                  placeholder="cdn.example.com"
-                  dir="ltr"
-                />
+                value={form.host}
+                onChange={(event) => setForm({ ...form, host: event.target.value })}
+                placeholder="cdn.example.com"
+                dir="ltr" />
+
               </Field>
               <Field label="Path">
                 <Input
-                  value={form.path}
-                  onChange={(event) => setForm({ ...form, path: event.target.value })}
-                  placeholder="/spectergate"
-                  dir="ltr"
-                />
+                value={form.path}
+                onChange={(event) => setForm({ ...form, path: event.target.value })}
+                placeholder="/spectergate"
+                dir="ltr" />
+
               </Field>
             </>
-          )}
-          {form.network === "grpc" && (
-            <Field label="نام سرویس gRPC" className="field-span-2">
+          }
+          {form.network === "grpc" &&
+          <Field label={t("نام سرویس gRPC")} className="field-span-2">
               <Input
-                value={form.serviceName}
-                onChange={(event) => setForm({ ...form, serviceName: event.target.value })}
-                placeholder="spectergate"
-                dir="ltr"
-              />
+              value={form.serviceName}
+              onChange={(event) => setForm({ ...form, serviceName: event.target.value })}
+              placeholder="spectergate"
+              dir="ltr" />
+
             </Field>
-          )}
+          }
 
           <div className="field-span-2 form-toggle-row">
             <div>
-              <strong>وضعیت اینباند</strong>
-              <span>اینباند غیرفعال در کانفیگ Xray و لینک‌های اشتراک قرار نمی‌گیرد.</span>
+              <strong>{t("وضعیت اینباند")}</strong>
+              <span>{t("اینباند غیرفعال در کانفیگ Xray و لینک‌های اشتراک قرار نمی‌گیرد.")}</span>
             </div>
             <Toggle
               checked={form.isActive}
               onChange={(value) => setForm({ ...form, isActive: value })}
-              label={form.isActive ? "فعال" : "غیرفعال"}
-            />
+              label={form.isActive ? t("فعال") : t("غیرفعال")} />
+
           </div>
 
           <InboundAdvanced value={form.advanced} onChange={(advanced) => setForm({ ...form, advanced })} network={form.network} security={form.security} />
@@ -926,93 +935,93 @@ export default function InboundsPage() {
       <ConfirmDialog
         open={deleteTarget !== null}
         onClose={() => setDeleteTarget(null)}
-        title="حذف اینباند"
-        message={`آیا از حذف اینباند «${deleteTarget?.tag}» اطمینان دارید؟ تمام کاربران مرتبط اتصال به این اینباند را از دست خواهند داد.`}
-        confirmLabel="حذف اینباند"
+        title={t("حذف اینباند")}
+        message={tt("آیا از حذف اینباند «{0}» اطمینان دارید؟ تمام کاربران مرتبط اتصال به این اینباند را از دست خواهند داد.", [deleteTarget?.tag])}
+        confirmLabel={t("حذف اینباند")}
         danger
         loading={deleteMutation.isPending}
         onConfirm={() => {
           if (deleteTarget) deleteMutation.mutate(deleteTarget);
-        }}
-      />
+        }} />
+
 
       {/* Bulk Delete Confirm Dialog */}
       <ConfirmDialog
         open={bulkDeleteOpen}
         onClose={() => setBulkDeleteOpen(false)}
-        title="حذف گروهی اینباندها"
-        message={`آیا از حذف تمام ${formatNumber(selectedIds.length)} اینباند انتخاب‌شده اطمینان دارید؟ این عمل غیرقابل بازگشت است.`}
-        confirmLabel="حذف تمام انتخاب‌شده‌ها"
+        title={t("حذف گروهی اینباندها")}
+        message={tt("آیا از حذف تمام {0} اینباند انتخاب‌شده اطمینان دارید؟ این عمل غیرقابل بازگشت است.", [formatNumber(selectedIds.length)])}
+        confirmLabel={t("حذف تمام انتخاب‌شده‌ها")}
         danger
         loading={bulkDeleteMutation.isPending}
-        onConfirm={() => bulkDeleteMutation.mutate()}
-      />
+        onConfirm={() => bulkDeleteMutation.mutate()} />
+
 
       {/* Xray Config Preview Modal */}
       <Modal
         open={previewOpen}
         onClose={() => setPreviewOpen(false)}
-        title="پیش‌نمایش کانفیگ Xray"
-        description="خروجی JSON بر اساس اینباندهای فعال روی نود محلی."
+        title={t("پیش‌نمایش کانفیگ Xray")}
+        description={t("خروجی JSON بر اساس اینباندهای فعال روی نود محلی.")}
         wide
         footer={
-          <Button
-            icon={<Wand2 size={16} />}
-            loading={applyMutation.isPending}
-            onClick={() => {
-              setPreviewOpen(false);
-              applyMutation.mutate();
-            }}
-          >
-            اعمال این کانفیگ
-          </Button>
-        }
-      >
-        {preview.isLoading ? (
-          <Spinner />
-        ) : preview.isError ? (
-          <div className="form-error">{(preview.error as Error).message}</div>
-        ) : (
-          <>
+        <Button
+          icon={<Wand2 size={16} />}
+          loading={applyMutation.isPending}
+          onClick={() => {
+            setPreviewOpen(false);
+            applyMutation.mutate();
+          }}>{"" + t("اعمال این کانفیگ") + " "}
+
+
+        </Button>
+        }>
+
+        {preview.isLoading ?
+        <Spinner /> :
+        preview.isError ?
+        <div className="form-error">{(preview.error as Error).message}</div> :
+
+        <>
             <div className="preview-meta">
-              <Badge tone="info">{formatNumber(preview.data?.inbound_count ?? 0)} اینباند</Badge>
-              <Badge tone="violet">{formatNumber(preview.data?.client_count ?? 0)} کلاینت</Badge>
-              {preview.data?.warnings.map((warning) => (
-                <Badge key={warning} tone="warning">
+              <Badge tone="info">{formatNumber(preview.data?.inbound_count ?? 0)}{" " + t("اینباند") + ""}</Badge>
+              <Badge tone="violet">{formatNumber(preview.data?.client_count ?? 0)}{" " + t("کلاینت") + ""}</Badge>
+              {preview.data?.warnings.map((warning) =>
+            <Badge key={warning} tone="warning">
                   {warning}
                 </Badge>
-              ))}
+            )}
             </div>
             <pre className="code-block" dir="ltr">
               {JSON.stringify(preview.data?.config, null, 2)}
             </pre>
           </>
-        )}
+        }
       </Modal>
 
       {/* Result Dialog after applying config */}
-      {applyResult && (
-        <Modal
-          open={applyResult !== null}
-          onClose={() => setApplyResult(null)}
-          title={applyResult.ok ? "کانفیگ با موفقیت اعمال شد" : "خطا در اعمال کانفیگ"}
-          footer={<Button onClick={() => setApplyResult(null)}>متوجه شدم</Button>}
-        >
+      {applyResult &&
+      <Modal
+        open={applyResult !== null}
+        onClose={() => setApplyResult(null)}
+        title={applyResult.ok ? t("کانفیگ با موفقیت اعمال شد") : t("خطا در اعمال کانفیگ")}
+        footer={<Button onClick={() => setApplyResult(null)}>{t("متوجه شدم")}</Button>}>
+
           <div className="apply-result-content">
             <p>{applyResult.message}</p>
-            {applyResult.warnings && applyResult.warnings.length > 0 && (
-              <div className="apply-warnings">
-                <strong>هشدارها:</strong>
+            {applyResult.warnings && applyResult.warnings.length > 0 &&
+          <div className="apply-warnings">
+                <strong>{t("هشدارها:")}</strong>
                 <ul>
-                  {applyResult.warnings.map((w, i) => (
-                    <li key={i}>{w}</li>
-                  ))}
+                  {applyResult.warnings.map((w, i) =>
+              <li key={i}>{w}</li>
+              )}
                 </ul>
               </div>
-            )}
+          }
           </div>
         </Modal>
-      )}
-    </div>
-  );
+      }
+    </div>);
+
 }

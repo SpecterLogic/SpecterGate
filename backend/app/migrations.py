@@ -5,8 +5,9 @@ from sqlalchemy import inspect
 def upgrade(engine):
     # Identifiers and SQL types are fixed application constants, never input.
     changes = {
+        "vpn_users": {"last_notified_status": "VARCHAR(20)","hwid_limit": "INTEGER", "traffic_reset_days": "INTEGER", "traffic_reset_at": "TIMESTAMP", "renewal_days": "INTEGER", "renewal_remaining": "INTEGER NOT NULL DEFAULT 0"},
         "admins": {"totp_secret": "VARCHAR(64)", "totp_enabled": "BOOLEAN NOT NULL DEFAULT FALSE", "recovery_codes_json": "TEXT"},
-        "inbounds": {"data_limit_bytes": "BIGINT", "expire_at": "TIMESTAMP", "reset_interval_days": "INTEGER", "last_reset_at": "TIMESTAMP"},
+        "inbounds": {"engine": "VARCHAR(16) NOT NULL DEFAULT 'xray'","data_limit_bytes": "BIGINT", "expire_at": "TIMESTAMP", "reset_interval_days": "INTEGER", "last_reset_at": "TIMESTAMP"},
     }
     with engine.begin() as connection:
         if engine.dialect.name == "sqlite":
@@ -22,4 +23,5 @@ def upgrade(engine):
                 if name not in existing:
                     if sql_type == "TIMESTAMP" and engine.dialect.name == "postgresql":
                         sql_type = "TIMESTAMP WITH TIME ZONE"
-                    connection.exec_driver_sql(f'ALTER TABLE "{table}" ADD COLUMN "{name}" {sql_type}')
+                    quote = engine.dialect.identifier_preparer.quote
+                    connection.exec_driver_sql(f'ALTER TABLE {quote(table)} ADD COLUMN {quote(name)} {sql_type}')

@@ -15,7 +15,23 @@ def export_profiles(users: list[VPNUser], inbounds: list[Inbound], nodes: dict[i
                 continue
             address = _host_for(inbound, nodes.get(inbound.node_id), host)
             name = f"{inbound.remark} | {user.username} | {inbound.id}"
+            if inbound.engine == "ssh":
+                if format == "singbox":
+                    from app.services.ssh_runtime import host_key
+                    profiles.append({"type":"ssh","tag":name,"server":address,"server_port":client_port(inbound),"user":user.username,"password":user.password,"host_key":[host_key().export_public_key().decode().strip()]})
+                continue
+            if inbound.engine == "mtg":
+                continue
+            if inbound.engine == "singbox":
+                if format == "singbox":
+                    from app.services.singbox_runtime import client_outbounds
+                    profiles.extend(client_outbounds(inbound, user, address, name))
+                    continue
+                if inbound.protocol in {"hysteria2", "tuic", "shadowtls", "shadowsocks"}:
+                    continue
             if format == "singbox":
+                if options(inbound).finalmask.tcp or options(inbound).finalmask.udp or options(inbound).vless_encryption != "none" or options(inbound).tls.echConfigList or options(inbound).reality.mldsa65Verify:
+                    continue
                 if inbound.protocol == 'shadowsocks' and (inbound.network != 'tcp' or inbound.security != 'none'):
                     continue
                 if inbound.network in {"xhttp", "kcp"} or options(inbound).tcp_http_obfuscation:
@@ -65,7 +81,7 @@ def export_profiles(users: list[VPNUser], inbounds: list[Inbound], nodes: dict[i
                 stream["realitySettings"] = {"serverName": inbound.sni, "fingerprint": inbound.fingerprint or "chrome", "publicKey": inbound.reality_public_key, "shortId": inbound.reality_short_id or ""}
             apply_stream_options(inbound, stream, client=True)
             if inbound.protocol in {"vless", "vmess"}:
-                identity = {"id": user.uuid, "encryption": "none"} if inbound.protocol == "vless" else {"id": user.uuid, "security": "auto"}
+                identity = {"id": user.uuid, "encryption": options(inbound).vless_encryption} if inbound.protocol == "vless" else {"id": user.uuid, "security": "auto"}
                 if inbound.protocol == "vless" and client_flow(inbound) and inbound.network == "tcp":
                     identity["flow"] = client_flow(inbound)
                 settings = {"vnext": [{"address": address, "port": client_port(inbound), "users": [identity]}]}
@@ -78,5 +94,5 @@ def export_profiles(users: list[VPNUser], inbounds: list[Inbound], nodes: dict[i
     if format == "singbox":
         if not profiles:
             return None
-        return {"log": {"level": "warn"}, "inbounds": [{"type": "mixed", "tag": "mixed-in", "listen": "127.0.0.1", "listen_port": 2080}], "outbounds": [{"type": "selector", "tag": "SpecterGate", "outbounds": [p["tag"] for p in profiles]}, *profiles], "route": {"final": "SpecterGate"}}
+        return {"log": {"level": "warn"}, "inbounds": [{"type": "mixed", "tag": "mixed-in", "listen": "127.0.0.1", "listen_port": 2080}], "outbounds": [{"type": "selector", "tag": "SpecterGate", "outbounds": [p["tag"] for p in profiles if p["type"] != "shadowtls"]}, *profiles], "route": {"final": "SpecterGate"}}
     return profiles

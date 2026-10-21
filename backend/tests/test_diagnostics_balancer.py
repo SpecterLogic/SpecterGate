@@ -41,12 +41,24 @@ def native_routing(monkeypatch, tmp_path, sample_user, request):
         ]},
     }
     config["inbounds"].append({"tag": "native-vless", "listen": "127.0.0.1", "port": vless_port, "protocol": "vless", "settings": {"decryption": "none", "clients": [{"id": sample_user["uuid"], "email": sample_user["uuid"], "level": 0}]}})
-    network = getattr(request, "param", "raw")
+    variant = getattr(request, "param", "raw")
+    network = "kcp" if variant == "masked-kcp" else "raw" if variant in {"masked-raw", "encrypted-raw"} else variant
     stream = {"network": network, "security": "none"}
     if network == "ws":
         stream["wsSettings"] = {"path": "/flow"}
     elif network == "xhttp":
         stream["xhttpSettings"] = {"path": "/flow", "mode": "auto"}
+    encryption = "none"
+    if variant == "masked-raw":
+        stream["finalmask"] = {"tcp": [{"type": "sudoku", "settings": {"password": "native-test-mask-password"}}]}
+    if variant == "masked-kcp":
+        stream["finalmask"] = {"udp": [{"type": "salamander", "settings": {"password": "native-test-mask-password"}}]}
+    if variant == "encrypted-raw":
+        from app.services.core_crypto import generate
+        monkeypatch.setattr(xray.settings, "xray_binary", binary)
+        pair = generate("vlessenc")
+        config["inbounds"][-1]["settings"]["decryption"] = pair["vless_decryption"]
+        encryption = pair["vless_encryption"]
     config["inbounds"][-1]["streamSettings"] = stream
     other_uuid = "ed0c32b1-cb18-4ea8-a00d-98619cc0ece1"
     config["inbounds"][-1]["settings"]["clients"].append({"id": other_uuid, "email": other_uuid, "level": 0})
@@ -68,7 +80,7 @@ def native_routing(monkeypatch, tmp_path, sample_user, request):
         if session_control.available():
             session_control.call("Configure", {"limits": {}, "blocks": []})
         monkeypatch.setattr(xray, "xray_status", lambda: {"running": True})
-        yield {"config": config, "path": path, "process": process, "vless_port": vless_port, "user": sample_user, "other_uuid": other_uuid, "stream": stream}
+        yield {"config": config, "path": path, "process": process, "vless_port": vless_port, "user": sample_user, "other_uuid": other_uuid, "stream": stream, "encryption": encryption}
     finally:
         process.terminate()
         process.wait(timeout=10)
@@ -208,7 +220,7 @@ def test_live_online_ips_limits_and_real_disconnect(native_routing, monkeypatch,
         server.server_close()
 
 
-@pytest.mark.parametrize("native_routing", ["raw", "ws", "xhttp"], indirect=True)
+@pytest.mark.parametrize("native_routing", ["raw", "ws", "xhttp", "masked-raw", "masked-kcp", "encrypted-raw"], indirect=True)
 def test_transport_and_mux_user_isolation(native_routing, tmp_path):
     import socketserver
     import struct
@@ -233,7 +245,7 @@ def test_transport_and_mux_user_isolation(native_routing, tmp_path):
             port = probe.getsockname()[1]
         config = {
             "inbounds": [{"listen": "127.0.0.1", "port": port, "protocol": "socks", "settings": {"auth": "noauth"}}],
-            "outbounds": [{"protocol": "vless", "settings": {"vnext": [{"address": "127.0.0.1", "port": native_routing["vless_port"], "users": [{"id": user, "encryption": "none"}]}]}, "streamSettings": native_routing["stream"], "mux": {"enabled": native_routing["stream"]["network"] != "xhttp", "concurrency": 8}}],
+            "outbounds": [{"protocol": "vless", "settings": {"vnext": [{"address": "127.0.0.1", "port": native_routing["vless_port"], "users": [{"id": user, "encryption": native_routing["encryption"]}]}]}, "streamSettings": native_routing["stream"], "mux": {"enabled": native_routing["stream"]["network"] != "xhttp", "concurrency": 8}}],
         }
         path = tmp_path / f"client-{index}.json"
         path.write_text(json.dumps(config), encoding="utf-8")
@@ -351,7 +363,7 @@ def test_xray_config_generation_with_balancer_and_chaining(client, auth, tmp_pat
 
     assert "balancers" in config["routing"]
     assert config["routing"]["balancers"][0]["tag"] == "balancer-stream"
-    
+
     # Check rule uses balancerTag
     balancer_rule = next(r for r in config["routing"]["rules"] if r.get("balancerTag") == "balancer-stream")
     assert "domain:video.com" in balancer_rule["domain"]

@@ -20,6 +20,8 @@ class Sniffing(StrictModel):
 
 
 class TLSOptions(StrictModel):
+    echServerKeys: str = Field(default='', max_length=16384)
+    echConfigList: str = Field(default='', max_length=16384)
     minVersion: Literal['1.2', '1.3'] = '1.2'
     maxVersion: Literal['1.2', '1.3'] = '1.3'
     cipherSuites: str = Field(default='', max_length=2000)
@@ -45,6 +47,8 @@ class FallbackLimit(StrictModel):
 
 
 class RealityOptions(StrictModel):
+    mldsa65Seed: str = Field(default='', max_length=128)
+    mldsa65Verify: str = Field(default='', max_length=8192)
     xver: Literal[0, 1, 2] = 0
     serverNames: list[str] = Field(default_factory=list, max_length=30)
     shortIds: list[str] = Field(default_factory=list, max_length=30)
@@ -102,7 +106,51 @@ class XHTTPOptions(StrictModel):
     scMaxBufferedPosts: int = Field(default=30, ge=1, le=10000)
 
 
+class Fallback(StrictModel):
+    name: str = Field(default='', max_length=253, pattern=r'^[a-zA-Z0-9.*-]*$')
+    alpn: str = Field(default='', max_length=30)
+    path: str = Field(default='', max_length=255, pattern=r'^(?:/.*)?$')
+    dest: int = Field(ge=1, le=65535)
+    xver: Literal[0, 1, 2] = 0
+
+
+class TransportMask(StrictModel):
+    type: Literal['fragment', 'sudoku', 'salamander', 'noise', 'header-custom', 'header-dns', 'header-dtls', 'header-srtp', 'header-utp', 'header-wechat', 'header-wireguard', 'mkcp-original', 'mkcp-aes128gcm', 'xdns', 'xicmp']
+    settings: dict = Field(default_factory=dict)
+
+    @model_validator(mode='after')
+    def size(self):
+        if len(json.dumps(self.settings)) > 16384:
+            raise ValueError('A transport mask cannot exceed 16 KiB.')
+        if self.type in {'salamander','sudoku','mkcp-aes128gcm'} and not self.settings.get('password'):
+            raise ValueError('This mask requires a password.')
+        return self
+
+
+class FinalMaskOptions(StrictModel):
+    tcp: list[TransportMask] = Field(default_factory=list, max_length=8)
+    udp: list[TransportMask] = Field(default_factory=list, max_length=8)
+
+    @model_validator(mode='after')
+    def directions(self):
+        if any(mask.type not in {'fragment','sudoku','header-custom'} for mask in self.tcp):
+            raise ValueError('Unsupported TCP mask type.')
+        if any(mask.type == 'fragment' for mask in self.udp):
+            raise ValueError('Fragment is a TCP mask.')
+        return self
+
+
 class AdvancedInbound(StrictModel):
+    ss_server_key: str = Field(default='', max_length=64)
+    mtproto_user_id: int | None = Field(default=None, ge=1)
+    mtproto_relay_port: int | None = Field(default=None, ge=1024, le=65535)
+    mtproto_domain: str = Field(default='www.cloudflare.com', max_length=253, pattern=r'^[A-Za-z0-9][A-Za-z0-9.-]+$')
+    vless_decryption: str = Field(default='none', max_length=4096)
+    vless_encryption: str = Field(default='none', max_length=4096)
+    finalmask: FinalMaskOptions = Field(default_factory=FinalMaskOptions)
+    shadowtls_handshake: str = Field(default='www.cloudflare.com', max_length=253, pattern=r'^[A-Za-z0-9.-]+$')
+    shadowtls_handshake_port: int = Field(default=443, ge=1, le=65535)
+    fallbacks: list[Fallback] = Field(default_factory=list, max_length=30)
     subscription_order: int = Field(default=0, ge=0, le=1000000)
     exclude_from_subscription: bool = False
     share_host: str = Field(default='', max_length=253)
@@ -158,6 +206,21 @@ def client_port(inbound):
 
 def validate_combination(inbound):
     network, security, protocol = inbound.network, inbound.security, inbound.protocol
+    engine = getattr(inbound, 'engine', 'xray')
+    if protocol in {'ssh','mtproto'}:
+        if engine != ('ssh' if protocol == 'ssh' else 'mtg') or network != 'tcp' or security != 'none' or inbound.flow:
+            raise ValueError('SSH/MTProto require their dedicated engine, RAW and no additional TLS/XTLS layer.')
+    elif engine in {'ssh','mtg'}:
+        raise ValueError('This protocol does not match the selected engine.')
+    if protocol in {'hysteria2', 'tuic', 'shadowtls'} and engine != 'singbox':
+        raise ValueError('This protocol requires the Sing-box engine.')
+    if engine == 'singbox':
+        if network not in {'tcp', 'ws', 'grpc', 'httpupgrade'}:
+            raise ValueError('This Sing-box version does not support XHTTP/mKCP server transports.')
+        if protocol in {'hysteria2', 'tuic'} and (security != 'tls' or network != 'tcp'):
+            raise ValueError('QUIC protocols require TLS and use their own UDP transport; select RAW in the form.')
+        if protocol == 'shadowtls' and (security != 'none' or network != 'tcp'):
+            raise ValueError('ShadowTLS v3 manages its own handshake; select RAW and no additional TLS layer.')
     if security == 'reality' and (protocol != 'vless' or network not in {'tcp', 'xhttp', 'grpc'}):
         raise ValueError('Reality requires VLESS with RAW/TCP, XHTTP or gRPC.')
     if security == 'reality' and inbound.reality_short_id and not re.fullmatch(r'(?:[0-9a-fA-F]{2}){0,8}', inbound.reality_short_id):
@@ -165,6 +228,28 @@ def validate_combination(inbound):
     if inbound.flow and (protocol != 'vless' or network != 'tcp' or security == 'none'):
         raise ValueError('XTLS flow requires VLESS over RAW/TCP with TLS or Reality.')
     advanced = options(inbound)
+    if advanced.tls.ech or advanced.tls.echConfig or advanced.tls.mldsa65 or advanced.reality.finalMask or advanced.reality.finalMaskConfig or advanced.xhttp.xdrive or advanced.xhttp.mode == "x-drive":
+        raise ValueError("Legacy experimental flags are unsupported. Use ECH keys, Reality ML-DSA keys and the FinalMask transport tab instead.")
+    if (advanced.vless_decryption != 'none' or advanced.vless_encryption != 'none'):
+        if engine != 'xray' or protocol != 'vless' or advanced.fallbacks:
+            raise ValueError('VLESS encryption requires an Xray VLESS inbound without fallbacks.')
+        if not all(value.startswith('mlkem768x25519plus.') for value in (advanced.vless_decryption, advanced.vless_encryption)):
+            raise ValueError('A matching VLESS decryption/encryption pair is required.')
+    if bool(advanced.reality.mldsa65Seed) != bool(advanced.reality.mldsa65Verify):
+        raise ValueError('Both ML-DSA-65 seed and verification key are required.')
+    if advanced.finalmask.udp and network != 'kcp':
+        raise ValueError('UDP masks require an mKCP inbound in this core integration.')
+    if advanced.finalmask.tcp and network == 'kcp':
+        raise ValueError('TCP masks cannot wrap mKCP.')
+    if engine == 'singbox':
+        if protocol == 'shadowsocks' and security != 'none':
+            raise ValueError('Sing-box Shadowsocks uses AEAD-2022; use ShadowTLS for a TLS camouflage layer.')
+        if advanced.fallbacks or advanced.finalmask.tcp or advanced.finalmask.udp or advanced.proxy_protocol or advanced.tcp_http_obfuscation or advanced.tls.echServerKeys or advanced.reality.mldsa65Seed:
+            raise ValueError('Fallback, FinalMask and PROXY/HTTP camouflage options require the Xray engine.')
+    if advanced.fallbacks and (protocol not in {'vless', 'trojan'} or network != 'tcp' or security != 'tls'):
+        raise ValueError('Fallbacks require VLESS/Trojan over RAW/TCP with TLS termination.')
+    if any(row.dest == inbound.port for row in advanced.fallbacks):
+        raise ValueError('Fallback destination cannot loop back to its own listening port.')
     if advanced.proxy_protocol and network == 'kcp':
         raise ValueError('PROXY protocol requires a TCP-based transport.')
     if advanced.tcp_http_obfuscation and network != 'tcp':
@@ -173,6 +258,8 @@ def validate_combination(inbound):
 
 def apply_stream_options(inbound, stream, client=False):
     advanced = options(inbound)
+    if advanced.finalmask.tcp or advanced.finalmask.udp:
+        stream['finalmask'] = advanced.finalmask.model_dump()
     if inbound.network == 'kcp':
         stream['kcpSettings'] = advanced.kcp.model_dump()
     if inbound.network == 'xhttp':
@@ -188,16 +275,11 @@ def apply_stream_options(inbound, stream, client=False):
     if not client and advanced.proxy_protocol:
         stream.setdefault('sockopt', {})['acceptProxyProtocol'] = True
     if inbound.security == 'tls':
-        tls = advanced.tls.model_dump()
-        if advanced.tls.ech:
-            tls['enableECH'] = True
-            if advanced.tls.echConfig:
-                tls['echConfig'] = advanced.tls.echConfig
-        if advanced.tls.mldsa65:
-            curves = list(advanced.tls.curvePreferences)
-            if 'X25519MLKEM768' not in curves:
-                curves.append('X25519MLKEM768')
-            tls['curvePreferences'] = curves
+        tls = advanced.tls.model_dump(exclude={'ech', 'echConfig', 'mldsa65', 'echServerKeys', 'echConfigList'})
+        if client and advanced.tls.echConfigList:
+            tls['echConfigList'] = advanced.tls.echConfigList
+        if not client and advanced.tls.echServerKeys:
+            tls['echServerKeys'] = advanced.tls.echServerKeys
         if client:
             tls = {k: v for k, v in tls.items() if k not in {'rejectUnknownSni', 'disableSystemRoot', 'enableSessionResumption'}}
         stream.setdefault('tlsSettings', {}).update(tls)
@@ -205,16 +287,15 @@ def apply_stream_options(inbound, stream, client=False):
         reality = stream['realitySettings']
         if client:
             reality['spiderX'] = advanced.reality.spiderX
+            if advanced.reality.mldsa65Verify:
+                reality['mldsa65Verify'] = advanced.reality.mldsa65Verify
             if advanced.reality.serverNames:
                 reality['serverName'] = advanced.reality.serverNames[0]
             if advanced.reality.shortIds:
                 reality['shortId'] = advanced.reality.shortIds[0]
         else:
-            values = advanced.reality.model_dump(exclude={'spiderX', 'serverNames', 'shortIds'})
-            if advanced.reality.finalMask:
-                values['finalMask'] = True
-                if advanced.reality.finalMaskConfig:
-                    values['finalMaskConfig'] = advanced.reality.finalMaskConfig
+            values = advanced.reality.model_dump(exclude={'spiderX', 'serverNames', 'shortIds', 'mldsa65Verify', 'finalMask', 'finalMaskConfig'})
+
             reality.update(values)
             if advanced.reality.serverNames:
                 reality['serverNames'] = advanced.reality.serverNames

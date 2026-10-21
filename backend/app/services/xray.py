@@ -174,11 +174,11 @@ def _build_inbound(inbound: Inbound, users: list[VPNUser]) -> tuple[dict | None,
     warnings: list[str] = []
 
     if inbound.protocol == "vless":
-        settings_block = {"clients": clients, "decryption": "none", "fallbacks": []}
+        settings_block = {"clients": clients, "decryption": options(inbound).vless_decryption}
     elif inbound.protocol == "vmess":
         settings_block = {"clients": clients}
     elif inbound.protocol == "trojan":
-        settings_block = {"clients": clients, "fallbacks": []}
+        settings_block = {"clients": clients, "fallbacks": [row.model_dump() for row in options(inbound).fallbacks]}
     elif inbound.protocol == "shadowsocks":
         settings_block = {"clients": clients, "network": "tcp,udp"}
     else:
@@ -187,6 +187,8 @@ def _build_inbound(inbound: Inbound, users: list[VPNUser]) -> tuple[dict | None,
     if inbound.security == "reality" and inbound.protocol != "vless":
         return None, [f"اینباند «{inbound.tag}»: Reality فقط برای VLESS پشتیبانی می‌شود."]
 
+    if inbound.protocol == "vless" and options(inbound).fallbacks:
+        settings_block["fallbacks"] = [row.model_dump() for row in options(inbound).fallbacks]
     stream, stream_warnings = _stream_settings(inbound)
     warnings.extend(stream_warnings)
     config = {
@@ -225,7 +227,9 @@ def generate_config(
         .order_by(Inbound.id.asc())
         .all()
     )
-    inbounds = [ib for ib in inbounds if ib.is_usable]
+    singbox_inbounds = [ib for ib in inbounds if ib.is_usable and ib.engine in {"singbox", "ssh"}]
+    mtg_inbounds = [ib for ib in inbounds if ib.is_usable and ib.engine == "mtg"]
+    inbounds = [ib for ib in inbounds if ib.is_usable and ib.engine == "xray"]
     users = db.query(VPNUser).order_by(VPNUser.id.asc()).all()
 
     generated: list[dict] = []
@@ -289,6 +293,15 @@ def generate_config(
             ],
         },
     }
+    if singbox_inbounds:
+        relay_users = [user for user in users if user.status == "active" and any(inbound_allowed(user, ib.id) for ib in singbox_inbounds)]
+        config["inbounds"].append({"tag": "sg-singbox-relay", "listen": "127.0.0.1", "port": settings.singbox_relay_port, "protocol": "vless", "settings": {"decryption": "none", "clients": [{"id": user.uuid, "email": "sb:" + user.uuid} for user in relay_users]}})
+    from app.services.mtproto_runtime import selected_user, credentials, relay_port
+    for ib in mtg_inbounds:
+        user = selected_user(db, ib)
+        if user:
+            _, relay_password = credentials(ib, user)
+            config["inbounds"].append({"tag": ib.tag, "listen": "127.0.0.1", "port": relay_port(ib), "protocol": "socks", "settings": {"auth": "password", "accounts": [{"user": user.uuid, "pass": relay_password}]}})
     client_count = sum(len(item.get("settings", {}).get("clients", [])) for item in generated)
     from app.services.routing import apply_to_xray
     apply_to_xray(db, config, node)
@@ -527,6 +540,8 @@ def sync_stats(db: Session) -> dict:
         if len(parts) != 4:
             continue
         kind, identifier, _, direction = parts
+        if kind == "user":
+            identifier = identifier.removeprefix("sb:")
         if kind == "user" and identifier in users:
             user = users[identifier]
             bucket = touched.setdefault(user, {"upload": 0, "download": 0})
@@ -537,6 +552,12 @@ def sync_stats(db: Session) -> dict:
         elif kind == "inbound" and identifier in inbounds:
             inbound = inbounds[identifier]
             bucket = inbound_traffic.setdefault(inbound, {"upload": 0, "download": 0})
+            if inbound.engine == "mtg":
+                from app.services.mtproto_runtime import selected_user
+                selected = selected_user(db, inbound)
+                if selected:
+                    user_bucket = touched.setdefault(selected, {"upload": 0, "download": 0})
+                    user_bucket["upload" if direction == "uplink" else "download"] += value
             if direction == "uplink":
                 bucket["upload"] += value
             elif direction == "downlink":

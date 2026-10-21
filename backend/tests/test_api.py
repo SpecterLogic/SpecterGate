@@ -131,7 +131,7 @@ def test_subscription_payload(client, auth, sample_user):
     info = client.get(f"/sub/{token}/info")
     assert info.status_code == 200
     assert len(info.json()["links"]) >= 1
-    assert "vmess://" in info.json()["links"][0]["uri"]
+    assert any("vmess://" in item["uri"] for item in info.json()["links"])
     assert len(info.json()["dns_links"]) == 2
     assert info.json()["dns_links"][0]["uri"].startswith("slipnet://")
 

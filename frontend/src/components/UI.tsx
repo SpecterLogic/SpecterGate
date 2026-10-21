@@ -1,4 +1,4 @@
-import {
+import { t } from "../lib/i18n";import {
   useEffect,
   useId,
   cloneElement,
@@ -8,8 +8,8 @@ import {
   type InputHTMLAttributes,
   type ReactNode,
   type SelectHTMLAttributes,
-  type TextareaHTMLAttributes,
-} from "react";
+  type TextareaHTMLAttributes } from
+"react";
 import { createPortal } from "react-dom";
 import { AlertTriangle, Loader2, X } from "lucide-react";
 import { cn } from "../lib/format";
@@ -39,28 +39,28 @@ export function Button({
     <button
       className={cn("btn", `btn-${variant}`, `btn-${size}`, className)}
       disabled={disabled || loading}
-      {...props}
-    >
+      {...props}>
+
       {loading ? <Loader2 className="spin" size={17} /> : icon}
       {children && <span>{children}</span>}
-    </button>
-  );
+    </button>);
+
 }
 
 /* ---------------- Card / section ---------------- */
-export function Card({ children, className }: { children: ReactNode; className?: string }) {
+export function Card({ children, className }: {children: ReactNode;className?: string;}) {
   return <div className={cn("card", className)}>{children}</div>;
 }
 
 export function SectionHeader({
   title,
   subtitle,
-  action,
-}: {
-  title: string;
-  subtitle?: string;
-  action?: ReactNode;
-}) {
+  action
+
+
+
+
+}: {title: string;subtitle?: string;action?: ReactNode;}) {
   return (
     <div className="section-header">
       <div>
@@ -68,8 +68,8 @@ export function SectionHeader({
         {subtitle && <p>{subtitle}</p>}
       </div>
       {action}
-    </div>
-  );
+    </div>);
+
 }
 
 /* ---------------- Badge ---------------- */
@@ -77,37 +77,37 @@ export function Badge({
   children,
   tone = "neutral",
   dot = false,
-  className,
-}: {
-  children: ReactNode;
-  tone?: "success" | "danger" | "warning" | "info" | "neutral" | "violet";
-  dot?: boolean;
-  className?: string;
-}) {
+  className
+
+
+
+
+
+}: {children: ReactNode;tone?: "success" | "danger" | "warning" | "info" | "neutral" | "violet";dot?: boolean;className?: string;}) {
   return (
     <span className={cn("badge", `badge-${tone}`, className)}>
       {dot && <i className="badge-dot" />}
       {children}
-    </span>
-  );
+    </span>);
+
 }
 
-export function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, { tone: "success" | "danger" | "warning" | "neutral" | "info"; label: string }> = {
-    active: { tone: "success", label: "فعال" },
-    online: { tone: "success", label: "آنلاین" },
-    expired: { tone: "danger", label: "منقضی" },
-    offline: { tone: "danger", label: "آفلاین" },
-    limited: { tone: "warning", label: "اتمام حجم" },
-    disabled: { tone: "neutral", label: "غیرفعال" },
-    unknown: { tone: "neutral", label: "نامشخص" },
+export function StatusBadge({ status }: {status: string;}) {
+  const map: Record<string, {tone: "success" | "danger" | "warning" | "neutral" | "info";label: string;}> = {
+    active: { tone: "success", label: t("فعال") },
+    online: { tone: "success", label: t("آنلاین") },
+    expired: { tone: "danger", label: t("منقضی") },
+    offline: { tone: "danger", label: t("آفلاین") },
+    limited: { tone: "warning", label: t("اتمام حجم") },
+    disabled: { tone: "neutral", label: t("غیرفعال") },
+    unknown: { tone: "neutral", label: t("نامشخص") }
   };
   const item = map[status] ?? { tone: "info" as const, label: status };
   return (
     <Badge tone={item.tone} dot>
       {item.label}
-    </Badge>
-  );
+    </Badge>);
+
 }
 
 /* ---------------- Form controls ---------------- */
@@ -116,14 +116,14 @@ export function Field({
   hint,
   error,
   children,
-  className,
-}: {
-  label: string;
-  hint?: string;
-  error?: string;
-  children: ReactNode;
-  className?: string;
-}) {
+  className
+
+
+
+
+
+
+}: {label: string;hint?: string;error?: string;children: ReactNode;className?: string;}) {
   const labelId = useId();
   const helpId = useId();
   const control = isValidElement(children) ? cloneElement(children as ReactElement<Record<string, unknown>>, { "aria-labelledby": labelId, "aria-describedby": error || hint ? helpId : undefined }) : children;
@@ -132,8 +132,8 @@ export function Field({
       <span id={labelId} className="field-label">{label}</span>
       {control}
       {error ? <span id={helpId} className="field-error">{error}</span> : hint ? <span id={helpId} className="field-hint">{hint}</span> : null}
-    </label>
-  );
+    </label>);
+
 }
 
 export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
@@ -144,8 +144,8 @@ export function Select({ className, children, ...props }: SelectHTMLAttributes<H
   return (
     <select className={cn("input select", className)} {...props}>
       {children}
-    </select>
-  );
+    </select>);
+
 }
 
 export function Textarea({ className, ...props }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
@@ -156,13 +156,13 @@ export function Toggle({
   checked,
   onChange,
   label,
-  disabled,
-}: {
-  checked: boolean;
-  onChange: (value: boolean) => void;
-  label?: string;
-  disabled?: boolean;
-}) {
+  disabled
+
+
+
+
+
+}: {checked: boolean;onChange: (value: boolean) => void;label?: string;disabled?: boolean;}) {
   return (
     <button
       type="button"
@@ -170,14 +170,14 @@ export function Toggle({
       aria-checked={checked}
       disabled={disabled}
       className={cn("toggle-row", disabled && "is-disabled")}
-      onClick={() => onChange(!checked)}
-    >
+      onClick={() => onChange(!checked)}>
+
       <span className={cn("toggle", checked && "is-on")}>
         <span className="toggle-thumb" />
       </span>
       {label && <span className="toggle-label">{label}</span>}
-    </button>
-  );
+    </button>);
+
 }
 
 /* ---------------- Modal ---------------- */
@@ -188,16 +188,16 @@ export function Modal({
   description,
   children,
   footer,
-  wide = false,
-}: {
-  open: boolean;
-  onClose: () => void;
-  title: string;
-  description?: string;
-  children: ReactNode;
-  footer?: ReactNode;
-  wide?: boolean;
-}) {
+  wide = false
+
+
+
+
+
+
+
+
+}: {open: boolean;onClose: () => void;title: string;description?: string;children: ReactNode;footer?: ReactNode;wide?: boolean;}) {
   useEffect(() => {
     if (!open) return;
     const previous = document.body.style.overflow;
@@ -221,7 +221,7 @@ export function Modal({
             <h3>{title}</h3>
             {description && <p>{description}</p>}
           </div>
-          <button type="button" className="icon-btn" onClick={onClose} aria-label="بستن">
+          <button type="button" className="icon-btn" onClick={onClose} aria-label={t("بستن")}>
             <X size={19} />
           </button>
         </div>
@@ -229,7 +229,7 @@ export function Modal({
         {footer && <div className="modal-foot">{footer}</div>}
       </div>
     </div>,
-    document.body,
+    document.body
   );
 }
 
@@ -239,56 +239,56 @@ export function ConfirmDialog({
   onConfirm,
   title,
   message,
-  confirmLabel = "حذف",
+  confirmLabel = t("حذف"),
   loading = false,
-  danger = true,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onConfirm: () => void;
-  title: string;
-  message: string;
-  confirmLabel?: string;
-  loading?: boolean;
-  danger?: boolean;
-}) {
+  danger = true
+
+
+
+
+
+
+
+
+
+}: {open: boolean;onClose: () => void;onConfirm: () => void;title: string;message: string;confirmLabel?: string;loading?: boolean;danger?: boolean;}) {
   return (
     <Modal
       open={open}
       onClose={onClose}
       title={title}
       footer={
-        <>
-          <Button variant="ghost" onClick={onClose}>
-            انصراف
-          </Button>
+      <>
+          <Button variant="ghost" onClick={onClose}>{"" + t("انصراف") + " "}
+
+        </Button>
           <Button variant={danger ? "danger" : "primary"} loading={loading} onClick={onConfirm}>
             {confirmLabel}
           </Button>
         </>
-      }
-    >
+      }>
+
       <div className="confirm-content">
         <span className={cn("confirm-icon", danger ? "danger" : "warning")}>
           <AlertTriangle size={24} />
         </span>
         <p>{message}</p>
       </div>
-    </Modal>
-  );
+    </Modal>);
+
 }
 
 /* ---------------- Feedback ---------------- */
-export function Spinner({ label = "در حال بارگذاری..." }: { label?: string }) {
+export function Spinner({ label = t("در حال بارگذاری...") }: {label?: string;}) {
   return (
     <div className="loading-state">
       <Loader2 className="spin" size={24} />
       <span>{label}</span>
-    </div>
-  );
+    </div>);
+
 }
 
-export function Skeleton({ height = 20, width = "100%" }: { height?: number; width?: string | number }) {
+export function Skeleton({ height = 20, width = "100%" }: {height?: number;width?: string | number;}) {
   return <span className="skeleton" style={{ height, width }} />;
 }
 
@@ -296,50 +296,50 @@ export function EmptyState({
   icon,
   title,
   description,
-  action,
-}: {
-  icon: ReactNode;
-  title: string;
-  description: string;
-  action?: ReactNode;
-}) {
+  action
+
+
+
+
+
+}: {icon: ReactNode;title: string;description: string;action?: ReactNode;}) {
   return (
     <div className="empty-state">
       <span className="empty-icon">{icon}</span>
       <h3>{title}</h3>
       <p>{description}</p>
       {action}
-    </div>
-  );
+    </div>);
+
 }
 
 export function Progress({
   value,
   tone = "accent",
-  className,
-}: {
-  value: number;
-  tone?: "accent" | "danger" | "warning" | "violet";
-  className?: string;
-}) {
+  className
+
+
+
+
+}: {value: number;tone?: "accent" | "danger" | "warning" | "violet";className?: string;}) {
   return (
     <div className={cn("progress", `progress-${tone}`, className)}>
       <span style={{ width: `${Math.min(100, Math.max(0, value))}%` }} />
-    </div>
-  );
+    </div>);
+
 }
 
 export function CopyButton({
   value,
-  label = "کپی",
+  label = t("کپی"),
   className,
-  onCopied,
-}: {
-  value: string;
-  label?: string;
-  className?: string;
-  onCopied?: () => void;
-}) {
+  onCopied
+
+
+
+
+
+}: {value: string;label?: string;className?: string;onCopied?: () => void;}) {
   return (
     <button
       type="button"
@@ -348,9 +348,9 @@ export function CopyButton({
         event.stopPropagation();
         await navigator.clipboard.writeText(value);
         onCopied?.();
-      }}
-    >
+      }}>
+
       {label}
-    </button>
-  );
+    </button>);
+
 }

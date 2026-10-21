@@ -19,7 +19,7 @@ while (($#)); do
     --amneziawg) INSTALL_AMNEZIAWG=true; shift ;;
     --dnstt) INSTALL_DNSTT=true; shift ;;
     --panel-port) PANEL_PORT="${2:?Missing port}"; PRIVATE_PANEL=true; shift 2 ;;
-    --help|-h) echo 'Usage: sudo bash deploy/install.sh --domain panel.example.com [--database sqlite|postgresql] [--private-panel] [--panel-port PORT] [--wireguard] [--amneziawg] [--dnstt]'; exit 0 ;;
+    --help|-h) echo 'Usage: sudo bash deploy/install.sh --domain panel.example.com [--database sqlite|postgresql|mysql|mariadb|timescaledb] [--private-panel] [--panel-port PORT] [--wireguard] [--amneziawg] [--dnstt]'; exit 0 ;;
     --*) echo "Unknown option: $1" >&2; exit 1 ;;
     *) [[ -z "$DOMAIN" ]] || { echo 'Unexpected argument.' >&2; exit 1; }; DOMAIN="$1"; shift ;;
   esac
@@ -35,7 +35,7 @@ if [[ ! "$DOMAIN" =~ ^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?\.[a-zA-Z]{2,63}$ ]
   echo "Usage: sudo CERTBOT_EMAIL=you@example.com bash deploy/install.sh panel.example.com" >&2
   exit 1
 fi
-[[ "$DATABASE" == sqlite || "$DATABASE" == postgresql ]] || { echo 'Supported databases: sqlite, postgresql.' >&2; exit 1; }
+[[ "$DATABASE" =~ ^(sqlite|postgresql|mysql|mariadb|timescaledb)$ ]] || { echo 'Unsupported database.' >&2; exit 1; }
 if [[ -n "$PANEL_PORT" ]] && { [[ ! "$PANEL_PORT" =~ ^[0-9]{4,5}$ ]] || ((10#$PANEL_PORT < 1024 || 10#$PANEL_PORT > 65535)); }; then
   echo 'Panel port must be between 1024 and 65535.' >&2; exit 1
 fi
@@ -107,6 +107,8 @@ if ! bash "$APP_DIR/backend/core/build.sh" "$CORE_CANDIDATE"; then
 fi
 chmod 0755 "$CORE_CANDIDATE"
 mv -f -- "$CORE_CANDIDATE" /usr/local/bin/xray
+python3 "$APP_DIR/backend/core/install_engine.py" singbox /usr/local/bin/sing-box
+python3 "$APP_DIR/backend/core/install_engine.py" mtg /usr/local/bin/mtg
 
 # Build the frontend on the server.
 cd "$APP_DIR/frontend"
@@ -123,22 +125,8 @@ python3 -m venv .venv
 
 if [[ ! -f "$APP_DIR/backend/.env" ]]; then
   umask 077
-  DATABASE_URL='sqlite:///./data/spectergate.db'
-  if [[ "$DATABASE" == postgresql ]]; then
-    apt-get install -y postgresql postgresql-client
-    systemctl enable --now postgresql
-    DB_PASSWORD=$(openssl rand -hex 32)
-    # Refuse to alter an existing database or role during a fresh install.
-    if runuser -u postgres -- psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='spectergate'" | grep -q 1; then
-      echo 'PostgreSQL role spectergate already exists. Configure an existing installation explicitly.' >&2
-      exit 1
-    fi
-    runuser -u postgres -- psql -v ON_ERROR_STOP=1 <<SQL
-CREATE ROLE spectergate LOGIN PASSWORD '$DB_PASSWORD';
-CREATE DATABASE spectergate OWNER spectergate;
-SQL
-    DATABASE_URL="postgresql+psycopg://spectergate:$DB_PASSWORD@127.0.0.1:5432/spectergate"
-  fi
+  source "$APP_DIR/deploy/database.sh"
+  setup_database "$DATABASE"
   ADMIN_USERNAME="sg_$(openssl rand -hex 4)"
   ADMIN_PASSWORD="${ADMIN_PASSWORD:-$(openssl rand -base64 18 | tr -d '=+/' | cut -c1-20)}"
   SECRET_KEY="$(openssl rand -hex 32)"
@@ -175,13 +163,19 @@ chown -R spectergate:spectergate "$APP_DIR/backend/data"
 chown -R www-data:www-data "$WEB_ROOT"
 
 install -m 0644 "$APP_DIR/deploy/spectergate.service" /etc/systemd/system/spectergate.service
-mkdir -p /opt/spectergate-agent /etc/spectergate
+mkdir -p /opt/spectergate-agent /etc/spectergate /usr/local/lib/spectergate
+apt-get install -y gnupg
+install -m 0644 "$APP_DIR/deploy/releases.pub" /etc/spectergate/releases.pub
+install -m 0755 "$APP_DIR/deploy/update_worker.py" /usr/local/lib/spectergate/update_worker.py
+install -m 0644 "$APP_DIR/deploy/spectergate-update.service" /etc/systemd/system/spectergate-update.service
+install -m 0644 "$APP_DIR/deploy/spectergate-update.timer" /etc/systemd/system/spectergate-update.timer
 install -m 0755 "$APP_DIR/agent/spectergate_agent.py" /opt/spectergate-agent/spectergate_agent.py
 install -m 0755 "$APP_DIR/agent/dns_router.py" /opt/spectergate-agent/dns_router.py
 install -m 0644 "$APP_DIR/deploy/spectergate-agent.service" /etc/systemd/system/spectergate-agent.service
 install -m 0644 "$APP_DIR/deploy/spectergate-dns-router.service" /etc/systemd/system/spectergate-dns-router.service
 systemctl daemon-reload
 systemctl enable spectergate
+systemctl enable --now spectergate-update.timer
 systemctl restart spectergate
 
 READY=false

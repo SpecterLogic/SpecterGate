@@ -1,4 +1,4 @@
-const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? import.meta.env.BASE_URL.replace(/\/$/, "");
+import { t } from "./i18n";const API_BASE = import.meta.env.VITE_API_BASE_URL as string | undefined ?? import.meta.env.BASE_URL.replace(/\/$/, "");
 
 export class ApiError extends Error {
   status: number;
@@ -10,16 +10,16 @@ export class ApiError extends Error {
 }
 
 function detailMessage(detail: unknown): string {
-  if (typeof detail === "string") return detail;
+  if (typeof detail === "string") return t(detail);
   if (Array.isArray(detail)) {
-    return detail
-      .map((item) => (typeof item === "object" && item && "msg" in item ? String(item.msg) : String(item)))
-      .join("؛ ");
+    return detail.
+    map((item) => typeof item === "object" && item && "msg" in item ? String(item.msg) : String(item)).
+    join(t("؛ "));
   }
   if (detail && typeof detail === "object" && "message" in detail) {
     return String(detail.message);
   }
-  return "درخواست با خطا مواجه شد.";
+  return t("درخواست با خطا مواجه شد.");
 }
 
 async function request<T>(path: string, options: RequestInit = {}, responseType?: "blob"): Promise<T> {
@@ -48,16 +48,16 @@ async function request<T>(path: string, options: RequestInit = {}, responseType?
 }
 
 export const api = {
-  upload: <T>(path: string, body: FormData) => request<T>(path, { method: "POST", body }),
+  upload: <T,>(path: string, body: FormData) => request<T>(path, { method: "POST", body }),
   download: (path: string, body?: unknown) => request<Blob>(path, { method: "POST", body: JSON.stringify(body ?? {}) }, "blob"),
-  get: <T>(path: string) => request<T>(path),
-  post: <T>(path: string, body?: unknown) =>
-    request<T>(path, { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) }),
-  put: <T>(path: string, body?: unknown) =>
-    request<T>(path, { method: "PUT", body: body === undefined ? undefined : JSON.stringify(body) }),
-  patch: <T>(path: string, body?: unknown) =>
-    request<T>(path, { method: "PATCH", body: body === undefined ? undefined : JSON.stringify(body) }),
-  delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+  get: <T,>(path: string) => request<T>(path),
+  post: <T,>(path: string, body?: unknown) =>
+  request<T>(path, { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) }),
+  put: <T,>(path: string, body?: unknown) =>
+  request<T>(path, { method: "PUT", body: body === undefined ? undefined : JSON.stringify(body) }),
+  patch: <T,>(path: string, body?: unknown) =>
+  request<T>(path, { method: "PATCH", body: body === undefined ? undefined : JSON.stringify(body) }),
+  delete: <T,>(path: string) => request<T>(path, { method: "DELETE" })
 };
 
 export { API_BASE };

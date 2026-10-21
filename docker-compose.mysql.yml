@@ -1,0 +1,25 @@
+services:
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${SPECTERGATE_DB_ADMIN_PASSWORD:?Set a separate database administrator password}
+      MYSQL_DATABASE: spectergate
+      MYSQL_USER: spectergate
+      MYSQL_PASSWORD: ${SPECTERGATE_DB_PASSWORD:?Set SPECTERGATE_DB_PASSWORD}
+    volumes:
+      - spectergate_mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_ROOT_PASSWORD\" mysqladmin ping --host=localhost --user=root --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    security_opt: ["no-new-privileges:true"]
+  backend:
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SPECTERGATE_DATABASE_URL: mysql+pymysql://spectergate:${SPECTERGATE_DB_PASSWORD}@db:3306/spectergate?charset=utf8mb4
+volumes:
+  spectergate_mysql:

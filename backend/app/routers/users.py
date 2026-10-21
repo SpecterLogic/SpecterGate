@@ -202,6 +202,8 @@ def create_user(
     enforce_user_quota(db, admin)
     target_admin_id = can_assign_owner(db, admin, payload.owner_admin_id)
     target_admin = db.get(Admin, target_admin_id) or admin
+    if (admin.require_template or target_admin.require_template) and payload.model_fields_set & {"traffic_reset_days", "renewal_days", "renewal_remaining"}:
+        raise HTTPException(403, "Template-bound administrators cannot grant automatic traffic resets or renewals.")
     resolve_plan(db, target_admin, payload.plan_id)
     if target_admin.id != admin.id:
         enforce_user_quota(db, target_admin)
@@ -251,6 +253,8 @@ def create_user(
         db.rollback()
         raise HTTPException(status_code=409, detail="Username or subscription name is already in use.") from None
     db.refresh(user)
+    from app.services.notifications import enqueue
+    enqueue(db, f"created:{user.id}", "Account created", f"Account {user.username} was created.")
     write_audit(
         db,
         admin,
@@ -292,7 +296,7 @@ def update_user(
     if "subscription_slug" in data:
         data["sub_token"] = _subscription_slug(db, data.pop("subscription_slug"), user.id)
     apply_resource_access(db, user, data, admin)
-    if admin.require_template and any(key in data for key in ("data_limit_bytes", "device_limit", "expire_at", "plan_id")):
+    if admin.require_template and any(key in data for key in ("data_limit_bytes", "device_limit", "expire_at", "plan_id", "traffic_reset_days", "renewal_days", "renewal_remaining")):
         raise HTTPException(status_code=403, detail="تغییر مشخصات پلن فقط با عملیات تمدید مجاز است.")
     if "username" in data and data["username"] != user.username:
         if db.query(VPNUser).filter(VPNUser.username == data["username"]).first():
@@ -304,6 +308,11 @@ def update_user(
         if group and user.subscription_id != group.id:
             if len([member for member in group.members if member.id != user.id]) >= group.max_members:
                 raise HTTPException(status_code=400, detail="ظرفیت اعضای این اشتراک تکمیل شده است.")
+    if data.get("hwid_limit"):
+        from app.models import UserDevice
+        records = db.query(UserDevice).filter_by(user_id=user.id).order_by(UserDevice.last_seen_at.desc(), UserDevice.id.desc()).all()
+        for record in records[data["hwid_limit"]:]:
+            db.delete(record)
     for key, value in data.items():
         setattr(user, key, value)
     try:
@@ -409,6 +418,8 @@ def rotate_uuid(
     ensure_user_access(db, admin, user)
     user.uuid = new_uuid()
     user.password = secrets.token_urlsafe(16)
+    from app.models import UserDevice
+    db.query(UserDevice).filter_by(user_id=user.id).delete()
     db.commit()
     db.refresh(user)
     write_audit(db, admin, "rotate_uuid", "user", user.id, f"چرخش UUID {user.username}", get_client_ip(request))
@@ -443,3 +454,29 @@ def user_usage(
         for key, value in sorted(buckets.items())
     ]
     return UserUsageOut(user_id=user_id, series=series, by_inbound=[])
+
+
+@router.get("/{user_id}/devices")
+def list_devices(user_id: int, db: Session = Depends(get_db), admin: Admin = Depends(read_access)):
+    from app.models import UserDevice
+    user = db.get(VPNUser, user_id)
+    if not user:
+        raise HTTPException(404, "User not found")
+    ensure_user_access(db, admin, user)
+    return [{"id": row.id, "label": row.label, "created_at": row.created_at, "last_seen_at": row.last_seen_at} for row in db.query(UserDevice).filter_by(user_id=user_id).all()]
+
+
+@router.delete("/{user_id}/devices/{device_id}")
+def delete_device(user_id: int, device_id: int, request: Request, db: Session = Depends(get_db), admin: Admin = Depends(write_access)):
+    from app.models import UserDevice
+    user = db.get(VPNUser, user_id)
+    if not user:
+        raise HTTPException(404, "User not found")
+    ensure_user_access(db, admin, user)
+    row = db.query(UserDevice).filter_by(user_id=user_id, id=device_id).first()
+    if not row:
+        raise HTTPException(404, "Device not found")
+    db.delete(row)
+    db.commit()
+    write_audit(db, admin, "remove_device", "user", user_id, "Registered HWID device removed", get_client_ip(request))
+    return {"ok": True}

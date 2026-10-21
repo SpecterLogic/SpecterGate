@@ -44,6 +44,8 @@ export interface LoginResponse {
 }
 
 export interface VPNUser {
+  hwid_limit?: number | null; traffic_reset_days?: number | null; traffic_reset_at?: string | null;
+  renewal_days?: number | null; renewal_remaining?: number;
   allowed_inbound_ids: number[] | null;
   allowed_dns_tunnel_ids: number[] | null;
   subscription_id: number | null;
@@ -96,11 +98,12 @@ export interface Node {
   inbound_count: number;
 }
 
-export type Protocol = "vless" | "vmess" | "trojan" | "shadowsocks";
+export type Protocol = "vless" | "vmess" | "trojan" | "shadowsocks" | "hysteria2" | "tuic" | "shadowtls" | "ssh" | "mtproto";
 export type Network = "tcp" | "ws" | "grpc" | "httpupgrade" | "xhttp" | "kcp";
 export type Security = "reality" | "tls" | "none";
 
 export interface Inbound {
+  engine?: "xray" | "singbox" | "ssh" | "mtg";
   extra_json: string | null;
   id: number;
   node_id: number | null;

@@ -73,30 +73,20 @@ def test_external_protocols_generators():
     assert tg_link.startswith("https://t.me/proxy?server=198.51.100.4&port=443&secret=ee")
 
 
-def test_core_options_ech_mldsa65_finalmask_xdrive():
-    # Test AdvancedInbound validation
-    adv = AdvancedInbound(
-        tls=TLSOptions(ech=True, echConfig="test-ech-config", mldsa65=True),
-        reality=RealityOptions(finalMask=True, finalMaskConfig="test-mask-config"),
-        xhttp=XHTTPOptions(mode="x-drive", xdrive=True),
-    )
-    assert adv.tls.ech is True
-    assert adv.tls.mldsa65 is True
-    assert adv.reality.finalMask is True
-    assert adv.xhttp.mode == "x-drive"
-
-    # Test apply_stream_options
+def test_core_options_keep_server_ech_keys_out_of_client_profiles():
+    adv = AdvancedInbound(tls=TLSOptions(echServerKeys="server-key", echConfigList="client-config"))
     class MockInbound:
         network = "tcp"
         security = "tls"
         extra_json = adv.model_dump_json()
-
-    stream = {}
-    apply_stream_options(MockInbound(), stream)
-    assert "tlsSettings" in stream
-    assert stream["tlsSettings"].get("enableECH") is True
-    assert stream["tlsSettings"].get("echConfig") == "test-ech-config"
-    assert "X25519MLKEM768" in stream["tlsSettings"].get("curvePreferences", [])
+    server, client = {}, {}
+    apply_stream_options(MockInbound(), server)
+    apply_stream_options(MockInbound(), client, client=True)
+    assert server["tlsSettings"]["echServerKeys"] == "server-key"
+    assert "echServerKeys" not in client["tlsSettings"]
+    assert client["tlsSettings"]["echConfigList"] == "client-config"
+    assert "enableECH" not in server["tlsSettings"]
+    assert "mldsa65" not in server["tlsSettings"]
 
 
 def test_protocols_and_xray_api(client, auth, monkeypatch):

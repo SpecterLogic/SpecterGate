@@ -31,7 +31,7 @@ def _query(**kwargs: str | None) -> str:
 
 def build_link(inbound: Inbound, node: Node | None, user: VPNUser, public_host: str) -> str | None:
     advanced = options(inbound)
-    if inbound.network == 'kcp' or advanced.tcp_http_obfuscation:
+    if inbound.network == 'kcp' or advanced.tcp_http_obfuscation or advanced.finalmask.tcp or advanced.finalmask.udp or advanced.vless_encryption != 'none' or advanced.tls.echConfigList or advanced.reality.mldsa65Verify:
         return None  # Use Xray JSON for transports that cannot be represented faithfully here.
     host = _host_for(inbound, node, public_host)
     if ":" in host and not host.startswith("["):
@@ -40,6 +40,26 @@ def build_link(inbound: Inbound, node: Node | None, user: VPNUser, public_host: 
     short_id = advanced.reality.shortIds[0] if advanced.reality.shortIds else inbound.reality_short_id
     port = client_port(inbound)
     remark = quote(f"{inbound.remark} | {user.username}")
+    if inbound.protocol == 'mtproto':
+        if options(inbound).mtproto_user_id != user.id:
+            return None
+        from app.services.mtproto_runtime import credentials
+        from app.services.external_protocols import generate_mtproto_link
+        secret, _ = credentials(inbound,user)
+        return generate_mtproto_link(host.strip('[]'),port,secret)
+    if inbound.protocol == 'ssh':
+        return f"ssh://{quote(user.username,safe='')}:{quote(user.password,safe='')}@{host}:{port}#{remark}"
+    if inbound.protocol in {'hysteria2', 'tuic'}:
+        from app.services.external_protocols import generate_hysteria2_client_uri, generate_tuic_client_uri
+        if inbound.protocol == 'hysteria2':
+            return generate_hysteria2_client_uri(host, port, user.password, sni or '', remark=f"{inbound.remark} | {user.username}")
+        return generate_tuic_client_uri(host, port, user.uuid, user.password, sni or '', remark=f"{inbound.remark} | {user.username}")
+    if inbound.protocol == 'shadowtls':
+        return None  # The inner Shadowsocks + ShadowTLS detour needs a full Sing-box profile.
+    if inbound.protocol == 'shadowsocks' and inbound.engine == 'singbox':
+        from app.services.singbox_runtime import server_key, ss_key
+        credentials = _b64(f"2022-blake3-aes-256-gcm:{server_key(inbound)}:{ss_key(user)}")
+        return f"ss://{credentials}@{host}:{port}#{remark}"
     network = inbound.network if inbound.network != "tcp" else None
 
     if inbound.protocol == "vless":

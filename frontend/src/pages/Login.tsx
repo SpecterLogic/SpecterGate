@@ -1,4 +1,5 @@
-import { useEffect, useState, type FormEvent } from "react";
+import LanguageSelect from "../components/LanguageSelect";
+import { t } from "../lib/i18n";import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Eye, EyeOff, KeyRound, Loader2, LockKeyhole, ShieldCheck, UserRound, Waypoints } from "lucide-react";
 import { useAuth } from "../lib/auth";
@@ -24,15 +25,15 @@ export default function Login() {
     event.preventDefault();
     setError("");
     setSubmitting(true);
-        try {
+    try {
       await login(username.trim(), password, otpCode.trim() || undefined);
       navigate("/", { replace: true });
     } catch (err) {
       if (err instanceof ApiError && (err.message === "2FA_REQUIRED" || err.status === 403)) {
         setRequires2FA(true);
-        setError("لطفاً کد ۶ رقمی یا کد بازیابی دومرحله‌ای را وارد کنید.");
+        setError(t("لطفاً کد ۶ رقمی یا کد بازیابی دومرحله‌ای را وارد کنید."));
       } else {
-        setError(err instanceof ApiError ? err.message : "اتصال به سرور برقرار نشد.");
+        setError(err instanceof ApiError ? err.message : t("اتصال به سرور برقرار نشد."));
       }
     } finally {
       setSubmitting(false);
@@ -40,7 +41,7 @@ export default function Login() {
   }
 
   return (
-    <div className="login-page">
+    <div className="login-page"><div className="login-language"><LanguageSelect /></div>
       <div className="login-glow login-glow-a" />
       <div className="login-glow login-glow-b" />
 
@@ -48,38 +49,38 @@ export default function Login() {
         <Brand />
         <div className="story-copy">
           <span className="story-badge">
-            <span className="pulse-dot" />
-            کنترل کامل زیرساخت
+            <span className="pulse-dot" />{"" + t("کنترل کامل زیرساخت") + " "}
+
           </span>
-          <h1>
-            یک پنل،
+          <h1>{"" + t("یک پنل،") + " "}
+
             <br />
-            <span>همهٔ مسیرها.</span>
+            <span>{t("همهٔ مسیرها.")}</span>
           </h1>
-          <p>
-            کاربران، اینباندها، نودها و مصرف ترافیک را در یک فضای کاری یکپارچه مدیریت کنید؛ با هستهٔ Xray و لینک‌های
-            اشتراک چندپروتکلی.
+          <p>{"" + t("کاربران، اینباندها، نودها و مصرف ترافیک را در یک فضای کاری یکپارچه مدیریت کنید؛ با هستهٔ Xray و لینک‌های اشتراک چندپروتکلی.") + " "}
+
+
           </p>
           <div className="story-features">
             <div>
               <ShieldCheck size={20} />
               <span>
-                <strong>چندپروتکلی</strong>
+                <strong>{t("چندپروتکلی")}</strong>
                 <small>VLESS · VMess · Trojan · Shadowsocks</small>
               </span>
             </div>
             <div>
               <Waypoints size={20} />
               <span>
-                <strong>مدیریت چندنودی</strong>
-                <small>سلامت، مصرف و کلید اختصاصی هر نود</small>
+                <strong>{t("مدیریت چندنودی")}</strong>
+                <small>{t("سلامت، مصرف و کلید اختصاصی هر نود")}</small>
               </span>
             </div>
             <div>
               <KeyRound size={20} />
               <span>
-                <strong>اشتراک هوشمند</strong>
-                <small>خروجی Xray و Clash با یک لینک</small>
+                <strong>{t("اشتراک هوشمند")}</strong>
+                <small>{t("خروجی Xray و Clash با یک لینک")}</small>
               </span>
             </div>
           </div>
@@ -97,14 +98,14 @@ export default function Login() {
               <LockKeyhole size={24} />
             </span>
             <div>
-              <h2>ورود به پنل</h2>
-              <p>برای ادامه، اطلاعات مدیریت خود را وارد کنید.</p>
+              <h2>{t("ورود به پنل")}</h2>
+              <p>{t("برای ادامه، اطلاعات مدیریت خود را وارد کنید.")}</p>
             </div>
           </div>
 
           <form onSubmit={handleSubmit} className="login-form">
             <label className="login-field">
-              <span>نام کاربری</span>
+              <span>{t("نام کاربری")}</span>
               <div className="login-input-wrap">
                 <UserRound size={18} />
                 <input
@@ -114,12 +115,12 @@ export default function Login() {
                   autoComplete="username"
                   autoFocus
                   required
-                  dir="ltr"
-                />
+                  dir="ltr" />
+
               </div>
             </label>
             <label className="login-field">
-              <span>رمز عبور</span>
+              <span>{t("رمز عبور")}</span>
               <div className="login-input-wrap">
                 <LockKeyhole size={18} />
                 <input
@@ -129,45 +130,45 @@ export default function Login() {
                   placeholder="••••••••"
                   autoComplete="current-password"
                   required
-                  dir="ltr"
-                />
-                <button type="button" onClick={() => setShowPassword((value) => !value)} aria-label="نمایش رمز عبور">
+                  dir="ltr" />
+
+                <button type="button" onClick={() => setShowPassword((value) => !value)} aria-label={t("نمایش رمز عبور")}>
                   {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
                 </button>
               </div>
             </label>
-            {requires2FA && (
-              <label className="login-field">
-                <span>کد تأیید دومرحله‌ای (TOTP یا کد بازیابی)</span>
+            {requires2FA &&
+            <label className="login-field">
+                <span>{t("کد تأیید دومرحله‌ای (TOTP یا کد بازیابی)")}</span>
                 <div className="login-input-wrap">
                   <ShieldCheck size={18} />
                   <input
-                    value={otpCode}
-                    onChange={(event) => setOtpCode(event.target.value)}
-                    placeholder="۱۲۳۴۵۶ یا XXXX-XXXX"
-                    autoFocus
-                    required
-                    dir="ltr"
-                  />
+                  value={otpCode}
+                  onChange={(event) => setOtpCode(event.target.value)}
+                  placeholder={t("۱۲۳۴۵۶ یا XXXX-XXXX")}
+                  autoFocus
+                  required
+                  dir="ltr" />
+
                 </div>
               </label>
-            )}
+            }
 
             {error && <div className="login-error">{error}</div>}
 
             <button type="submit" className="login-submit" disabled={submitting}>
               {submitting ? <Loader2 className="spin" size={19} /> : <ArrowLeft size={19} />}
-              <span>{submitting ? "در حال ورود..." : "ورود به فضای کاری"}</span>
+              <span>{submitting ? t("در حال ورود...") : t("ورود به فضای کاری")}</span>
             </button>
           </form>
 
           <div className="login-note">
             <ShieldCheck size={16} />
-            <span>نشست شما با توکن امن محافظت می‌شود. رمز پیش‌فرض را پس از اولین ورود تغییر دهید.</span>
+            <span>{t("نشست شما با توکن امن محافظت می‌شود. رمز پیش‌فرض را پس از اولین ورود تغییر دهید.")}</span>
           </div>
         </div>
-        <p className="login-copyright">ساخته‌شده برای کنترل کامل، بدون وابستگی به سرویس خارجی.</p>
+        <p className="login-copyright">{t("ساخته‌شده برای کنترل کامل، بدون وابستگی به سرویس خارجی.")}</p>
       </section>
-    </div>
-  );
+    </div>);
+
 }

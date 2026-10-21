@@ -16,6 +16,7 @@ from sqlalchemy import (
     JSON,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -258,6 +259,12 @@ class VPNUser(Base):
     upload_bytes: Mapped[int] = mapped_column(BigInteger, default=0)
     download_bytes: Mapped[int] = mapped_column(BigInteger, default=0)
     device_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_notified_status: Mapped[str | None] = mapped_column(String(20))
+    hwid_limit: Mapped[int | None] = mapped_column(Integer)
+    traffic_reset_days: Mapped[int | None] = mapped_column(Integer)
+    traffic_reset_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    renewal_days: Mapped[int | None] = mapped_column(Integer)
+    renewal_remaining: Mapped[int] = mapped_column(Integer, default=0)
     expire_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_online_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     note: Mapped[str | None] = mapped_column(Text)
@@ -333,6 +340,7 @@ class Inbound(Base):
     __tablename__ = "inbounds"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    engine: Mapped[str] = mapped_column(String(16), default="xray")
     node_id: Mapped[int | None] = mapped_column(
         ForeignKey("nodes.id", ondelete="SET NULL"), index=True
     )
@@ -523,3 +531,26 @@ class AuditLog(Base):
     detail: Mapped[str | None] = mapped_column(Text)
     ip_address: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class UserDevice(Base):
+    __tablename__ = "user_devices"
+    __table_args__ = (UniqueConstraint("user_id", "fingerprint", name="uq_user_device"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("vpn_users.id", ondelete="CASCADE"), index=True)
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    label: Mapped[str] = mapped_column(String(100), default="Client")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class NotificationEvent(Base):
+    __tablename__ = "notification_events"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    event_key: Mapped[str] = mapped_column(String(180), unique=True)
+    title: Mapped[str] = mapped_column(String(180))
+    message: Mapped[str] = mapped_column(Text)
+    channel: Mapped[str] = mapped_column(String(16))
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

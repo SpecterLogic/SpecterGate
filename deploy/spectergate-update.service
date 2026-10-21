@@ -1,0 +1,14 @@
+[Unit]
+Description=SpecterGate signed release updater
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/spectergate/update_worker.py
+TimeoutStartSec=3600
+UMask=0077
+PrivateTmp=true
+NoNewPrivileges=true
+RuntimeDirectory=spectergate-updater
+RuntimeDirectoryMode=0700

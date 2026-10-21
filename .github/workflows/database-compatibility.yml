@@ -1,0 +1,63 @@
+name: Database compatibility
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  databases:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - engine: mysql
+            image: mysql:8.4
+            port: 3306
+            url: mysql+pymysql://spectergate:disposable-test-password@127.0.0.1:3306/sg_verify
+            health: mysqladmin ping --silent
+          - engine: mariadb
+            image: mariadb:11.4
+            port: 3306
+            url: mysql+pymysql://spectergate:disposable-test-password@127.0.0.1:3306/sg_verify
+            health: healthcheck.sh --connect --innodb_initialized
+          - engine: postgresql
+            image: postgres:16-alpine
+            port: 5432
+            url: postgresql+psycopg://spectergate:disposable-test-password@127.0.0.1:5432/sg_verify
+            health: pg_isready -h 127.0.0.1 -U spectergate -d sg_verify
+          - engine: timescaledb
+            image: timescale/timescaledb:2.31.0-pg16
+            port: 5432
+            url: postgresql+psycopg://spectergate:disposable-test-password@127.0.0.1:5432/sg_verify
+            health: pg_isready -h 127.0.0.1 -U spectergate -d sg_verify
+    services:
+      database:
+        image: ${{ matrix.image }}
+        env:
+          MYSQL_DATABASE: sg_verify
+          MYSQL_USER: spectergate
+          MYSQL_PASSWORD: disposable-test-password
+          MYSQL_ROOT_PASSWORD: disposable-admin-password
+          MARIADB_DATABASE: sg_verify
+          MARIADB_USER: spectergate
+          MARIADB_PASSWORD: disposable-test-password
+          MARIADB_ROOT_PASSWORD: disposable-admin-password
+          POSTGRES_DB: sg_verify
+          POSTGRES_USER: spectergate
+          POSTGRES_PASSWORD: disposable-test-password
+        ports:
+          - ${{ matrix.port }}:${{ matrix.port }}
+        options: >-
+          --health-cmd="${{ matrix.health }}"
+          --health-interval=10s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client mariadb-client
+      - run: pip install -r backend/requirements-dev.txt
+      - run: python -m pytest backend/tests/test_database_compatibility.py -q
+        env:
+          SG_TEST_DATABASE_URL: ${{ matrix.url }}
+          SG_TEST_TIMESCALE: ${{ matrix.engine == 'timescaledb' && '1' || '0' }}
+      - run: python -m pytest backend/tests/test_update_signatures.py -q

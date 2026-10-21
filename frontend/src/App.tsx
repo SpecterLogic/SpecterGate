@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from "react";
+import { t } from "./lib/i18n";import { lazy, Suspense, useEffect } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import Layout from "./components/Layout";
 import { useAuth } from "./lib/auth";
@@ -22,11 +22,11 @@ const Backups = lazy(() => import("./pages/Backups"));
 const SecurityPage = lazy(() => import("./pages/Security"));
 const Outbounds = lazy(() => import("./pages/Outbounds"));
 const RoutingPage = lazy(() => import("./pages/Routing"));
-const DnsHostsPage = lazy(() => import("./pages/DnsHosts").then(m => ({ default: m.DnsHosts })));
-const CertificatesPage = lazy(() => import("./pages/Certificates").then(m => ({ default: m.Certificates })));
-const DiagnosticsPage = lazy(() => import("./pages/Diagnostics").then(m => ({ default: m.Diagnostics })));
+const DnsHostsPage = lazy(() => import("./pages/DnsHosts").then((m) => ({ default: m.DnsHosts })));
+const CertificatesPage = lazy(() => import("./pages/Certificates").then((m) => ({ default: m.Certificates })));
+const DiagnosticsPage = lazy(() => import("./pages/Diagnostics").then((m) => ({ default: m.Diagnostics })));
 
-function PermissionRoute({ permission, children }: { permission: string; children: React.ReactNode }) {
+function PermissionRoute({ permission, children }: {permission: string;children: React.ReactNode;}) {
   const { admin } = useAuth();
   return admin?.permissions.includes(permission) ? children : <Navigate to="/" replace />;
 }
@@ -35,9 +35,9 @@ function RouteFallback() {
   return (
     <div className="route-fallback">
       <span className="spinner-dot" />
-      <span>در حال بارگذاری...</span>
-    </div>
-  );
+      <span>{t("در حال بارگذاری...")}</span>
+    </div>);
+
 }
 
 function ScrollToTop() {
@@ -59,9 +59,9 @@ function ProtectedRoute() {
             <path d="M15 28v-6l5 3 5-3v6" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" opacity=".55" />
           </svg>
         </span>
-        <span>در حال آماده‌سازی پنل...</span>
-      </div>
-    );
+        <span>{t("در حال آماده‌سازی پنل...")}</span>
+      </div>);
+
   }
   if (!admin) return <Navigate to="/login" replace />;
   return <Outlet />;
@@ -69,7 +69,7 @@ function ProtectedRoute() {
 
 export default function App() {
   const { admin } = useAuth();
-  const preferences = useQuery({ queryKey: ['display-preferences'], queryFn: () => api.get<{time_zone: string; calendar: string}>('/api/display-preferences'), enabled: !!admin });
+  const preferences = useQuery({ queryKey: ['display-preferences'], queryFn: () => api.get<{time_zone: string;calendar: string;}>('/api/display-preferences'), enabled: !!admin });
   configureDatePreferences(preferences.data?.time_zone || 'Asia/Tehran', preferences.data?.calendar || 'persian');
   return (
     <>
@@ -108,6 +108,6 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>
-    </>
-  );
+    </>);
+
 }

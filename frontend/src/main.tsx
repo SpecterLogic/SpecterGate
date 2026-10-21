@@ -12,6 +12,12 @@ import { AuthProvider } from "./lib/auth";
 import { ToastProvider } from "./lib/toast";
 import "./styles.css";
 
+if ('serviceWorker' in navigator && window.isSecureContext) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`, {scope:import.meta.env.BASE_URL}).catch(() => {});
+  });
+}
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {

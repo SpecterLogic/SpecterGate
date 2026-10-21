@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
+import { t } from "./i18n";import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
 import { AlertTriangle, CheckCircle2, Info, X } from "lucide-react";
 import { cn } from "./format";
 
@@ -17,7 +17,7 @@ interface ToastContextValue {
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
-export function ToastProvider({ children }: { children: ReactNode }) {
+export function ToastProvider({ children }: {children: ReactNode;}) {
   const [items, setItems] = useState<ToastItem[]>([]);
   const counter = useRef(0);
 
@@ -31,16 +31,16 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       setItems((current) => [...current.slice(-3), { id, kind, message }]);
       window.setTimeout(() => remove(id), kind === "error" ? 6500 : 4500);
     },
-    [remove],
+    [remove]
   );
 
   const value = useMemo(
     () => ({
       success: (message: string) => push("success", message),
       error: (message: string) => push("error", message),
-      info: (message: string) => push("info", message),
+      info: (message: string) => push("info", message)
     }),
-    [push],
+    [push]
   );
 
   return (
@@ -53,15 +53,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             <div key={item.id} className={cn("toast", `toast-${item.kind}`)}>
               <Icon size={18} />
               <span>{item.message}</span>
-              <button type="button" onClick={() => remove(item.id)} aria-label="بستن">
+              <button type="button" onClick={() => remove(item.id)} aria-label={t("بستن")}>
                 <X size={15} />
               </button>
-            </div>
-          );
+            </div>);
+
         })}
       </div>
-    </ToastContext.Provider>
-  );
+    </ToastContext.Provider>);
+
 }
 
 export function useToast(): ToastContextValue {

@@ -15,7 +15,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     XRAY_LOCATION_ASSET=/opt/xray
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl unzip passwd postgresql-client \
+    && apt-get install -y --no-install-recommends ca-certificates curl unzip passwd postgresql-client default-mysql-client \
     && rm -rf /var/lib/apt/lists/*
 
 # Xray-core is bundled so the panel can generate, validate and run configs.
@@ -33,6 +33,8 @@ RUN case "$TARGETARCH" in \
     && rm -rf /tmp/xray.zip
 
 COPY --from=core-build /build/xray /usr/local/bin/xray
+COPY core/install_engine.py /tmp/install_engine.py
+RUN python /tmp/install_engine.py singbox /usr/local/bin/sing-box && python /tmp/install_engine.py mtg /usr/local/bin/mtg && rm /tmp/install_engine.py
 
 WORKDIR /app
 

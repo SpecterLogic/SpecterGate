@@ -29,16 +29,30 @@ This checklist tracks functional coverage against the requested 3x-ui, PasarGuar
 | Date display | Configurable IANA time zone and Persian/Gregorian calendar in authenticated panel | Database timestamps remain UTC; duration-based jobs are elapsed-time jobs, not calendar schedules |
 | Security and deployment | HTTPS installer, random owner credentials, session revocation, cookie/origin/host protection, body limits, encrypted integration secrets, audit log | Not a comprehensive security audit or guarantee of filtering resistance |
 
-## Still required for complete requested coverage
+## Version 0.2 additions
+
+| Feature | Coverage / limits |
+| --- | --- |
+| Auxiliary engines | Sing-box Hysteria2/TUIC/ShadowTLS/SS2022, restricted SSH and dedicated MTProto; local node only, authenticated Xray relay for quotas/routing |
+| Native verification | Payload/accounting tested for Sing-box and SSH; MTG startup/relay tested, full Telegram client requires deployment verification |
+| User policies | HWID registration, periodic traffic reset, bounded renewal; HWID is client-supplied and spoofable |
+| Cloudflare | Zone-scoped DNS edit and periodic HTTPS edge selection; server-side measurement, no client connectivity guarantee |
+| Databases | Installer and Compose MySQL/MariaDB/TimescaleDB support; real-database CI workflow |
+| UI | Persian/English RTL/LTR, network-only PWA; no offline account cache |
+| VLESS Encryption | Native ML-KEM generation, full Xray JSON, tested payload; incompatible with fallbacks |
+
+See [setup and limits](FEATURES_0_2_FA.md).
+
+## Remaining gaps and deployment checks
 
 | Feature | Current status |
 | --- | --- |
 | AmneziaWG inbound server | Native companion, independent IPv4 peers/keys, explicit grants and usage reconciliation implemented; isolated Linux handshake/payload/revocation verified. Public client/network testing remains deployment-specific. |
 | OpenVPN server and client profiles | Not implemented |
 | Other protocol families / third-party transports including XDRIVE | Not implemented; must establish engine and client compatibility first |
-| TCP/UDP FinalMask controls | Not implemented |
-| Advanced ECH keys/configuration and OCSP controls | Not implemented |
-| ML-DSA-65 Reality key management | Not implemented |
+| TCP/UDP FinalMask controls | Implemented for pinned Xray; native TCP Sudoku and UDP Salamander payload tests. |
+| ECH / OCSP | ECH key generation and mapping implemented and native-validated; OCSP controls not implemented. |
+| ML-DSA-65 Reality key management | Implemented with native generation and configuration validation. |
 | Certificate management | PEM upload and root Certbot/Nginx worker with renewal hooks implemented. Public issuance/renewal needs deployment validation; browser management does not change Nginx virtual-host mappings automatically. |
 | Outbound chains, pools and subscription balancers | Not implemented; Direct, Block, IPv4, WARP, SOCKS5 and HTTP proxy outbounds are available |
 | Routing tester backed by core diagnostics | Uses the running local Xray RoutingService.TestRoute; native rule/condition tests pass. It is not an end-to-end connectivity test and remote-node RPC is not exposed. |
@@ -46,9 +60,9 @@ This checklist tracks functional coverage against the requested 3x-ui, PasarGuar
 | Inbound aggregate quotas, expiry, scheduled traffic reset and bulk operations | Not implemented; user/group quotas are available |
 | Online IPs / limits | Managed local Xray tracks authenticated logical flows. New excess IPs are rejected atomically; lowering limits closes excess flows. Manual disconnect blocks the selected user/IP for ten minutes without restarting the core. Standard legacy cores require upgrade for enforcement. NAT is not a physical-device identifier; remote nodes and native tunnels are outside this counter. |
 | LDAP / external authentication | Not implemented. Local TOTP MFA is available with encrypted keys, protected recovery hashes and replay prevention. |
-| Email / Discord integration and additional notifications | Not implemented; Telegram scope remains administration and owner backups |
+| Email / Discord notifications | Durable bounded-retry event delivery; live provider verification requires installation credentials. |
 | Private dashboard URL | Dedicated HTTPS port and random path implemented; authentication remains required |
-| Restart/update management UI | Service CLI is available |
+| Update UI | Signed stable tags, optional daily checks, independent root worker, encrypted pre-update backup and code rollback. Full server upgrade needs deployment testing. |
 | Complete Linux runtime validation | Still requires clean Ubuntu/Debian installation, PostgreSQL backup/restore, real clients and representative networks |
 
 ## Compatibility references

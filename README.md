@@ -6,7 +6,12 @@ SpecterGate combines a React interface with a FastAPI backend and Xray-core. It 
 
 ## Features
 
-- VLESS, VMess, Trojan and Shadowsocks inbounds.
+- VLESS, VMess, Trojan and Shadowsocks inbounds with Xray or Sing-box.
+- Native Hysteria2, TUIC, ShadowTLS v3, restricted SSH forwarding and dedicated per-user MTProto listeners on the local node.
+- HWID subscription registration limits, periodic user traffic resets and bounded automatic renewal.
+- Xray TLS fallbacks, TCP/UDP FinalMask, VLESS encryption, ECH and Reality ML-DSA-65 key generation.
+- Owner-scoped Cloudflare DNS management and scheduled CDN edge selection with verified HTTPS probes.
+- Durable SMTP/Discord event notifications, signed stable-release updates, Persian/English UI and an installable network-only PWA.
 - Optional native WireGuard IPv4 server with encrypted user keys, config files, QR and quota/expiry reconciliation.
 - Optional native AmneziaWG with separate peers and keys, per-user grants, IPv4 configuration/QR and a root companion for traffic and expiry enforcement.
 - Encrypted TOTP secrets, protected recovery-code hashes and single-use login codes.
@@ -23,9 +28,11 @@ SpecterGate combines a React interface with a FastAPI backend and Xray-core. It 
 - Node-specific Direct/IPv4/Block/WARP routing and SOCKS5/HTTP proxy outbounds with encrypted credentials.
 - Fail2ban SSH status, ban/unban and protection settings through a restricted local bridge, with independent administrator permissions.
 - Installation-specific Telegram bot: administrator user creation, subscription QR delivery and owner-only encrypted backups.
-- SQLite or PostgreSQL, a quick server installer, Docker Compose, Nginx and systemd deployment.
+- SQLite, PostgreSQL, MySQL, MariaDB or TimescaleDB; a quick server installer, Docker Compose, Nginx and systemd deployment.
 
 This project is under active development. OpenVPN is not implemented. Native AmneziaWG and certificate management require their Linux services; client and public-network compatibility must be verified for your deployment. Automated sales and payment processing are outside the project scope.
+
+See the [version 0.2 Persian guide](docs/FEATURES_0_2_FA.md) for setup, engine compatibility, device policies and update limitations. Auxiliary engines currently run on the local node only. HWID is a client-supplied identifier, not hardware attestation.
 
 ## Quick server setup
 
@@ -35,7 +42,7 @@ On a dedicated Debian/Ubuntu server (Python 3.11+), replace the domain and run:
 curl -fsSLo /tmp/spectergate-install.sh https://raw.githubusercontent.com/SpecterLogic/SpecterGate/main/install.sh && sudo bash /tmp/spectergate-install.sh --domain panel.example.com --private-panel
 ```
 
-Add `--database postgresql` for a local PostgreSQL database, or `--version TAG_OR_COMMIT` to select an existing version. SQLite is the default. The installer generates owner credentials, configures HTTPS and installs the `spectergate` management command. Your domain must point to the server, with TCP ports 80/443 reachable.
+Add `--database postgresql`, `mysql`, `mariadb` or `timescaledb` for a local database, or `--version TAG_OR_COMMIT` to select an existing version. SQLite is the default. The installer generates owner credentials, configures HTTPS and installs the `spectergate` management command. Your domain must point to the server, with TCP ports 80/443 reachable.
 
 The installer and Docker build compile a pinned Xray revision with the session-control extension in `backend/core`; the first build requires extra time and Internet access to Go dependencies. Existing installations using a standard Xray binary need the [managed core upgrade](docs/NATIVE_SERVICES_FA.md#ipهای-آنلاین-و-تست-مسیر) before targeted disconnection or IP-limit enforcement is available.
 
@@ -96,7 +103,7 @@ cp .env.docker.example .env
 docker compose up -d --build
 ```
 
-The web container binds to `127.0.0.1:8080`; put it behind a host HTTPS reverse proxy. For local HTTP-only testing, set `SPECTERGATE_SESSION_COOKIE_SECURE=false`. Publish every inbound TCP/UDP port that clients need. The optional PostgreSQL override is `docker-compose.postgres.yml`.
+The web container binds to `127.0.0.1:8080`; put it behind a host HTTPS reverse proxy. For local HTTP-only testing, set `SPECTERGATE_SESSION_COOKIE_SECURE=false`. Publish every inbound TCP/UDP port that clients need. Database overrides are `docker-compose.postgres.yml`, `docker-compose.mysql.yml`, `docker-compose.mariadb.yml` and `docker-compose.timescale.yml`. MySQL/MariaDB require separate administrator and application passwords.
 
 The backend manages local processes and listeners; run one API worker per instance. DNSTT server installation and DNS records are separate deployment steps described in the tunnel setup screen.
 

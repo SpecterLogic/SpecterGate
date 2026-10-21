@@ -33,6 +33,19 @@ def create_backup(password: str) -> tuple[str, bytes]:
             with closing(sqlite3.connect(f"file:{source.as_posix()}?mode=ro", uri=True)) as original, closing(sqlite3.connect(snapshot)) as destination:
                 original.backup(destination)
             database_kind = "sqlite"
+        elif make_url(settings.database_url).get_backend_name() in {"mysql", "mariadb"}:
+            binary = shutil.which("mariadb-dump") or shutil.which("mysqldump")
+            if not binary:
+                raise RuntimeError("Install mariadb-dump or mysqldump before database backup.")
+            url = make_url(settings.database_url)
+            snapshot = folder / "database.sql"
+            env = os.environ.copy()
+            env["MYSQL_PWD"] = url.password or ""
+            command = [binary,"--single-transaction","--skip-lock-tables",f"--host={url.host or 'localhost'}",f"--port={url.port or 3306}",f"--user={url.username or ''}",f"--result-file={snapshot}","--",url.database or ""]
+            result = subprocess.run(command,env=env,capture_output=True,timeout=120)
+            if result.returncode:
+                raise RuntimeError("MySQL/MariaDB backup failed; check database connectivity.")
+            database_kind = "mysql"
         else:
             binary = shutil.which("pg_dump")
             if not binary:

@@ -65,13 +65,17 @@ def reconcile_inbounds(db: SessionLocal) -> None:
 @xray.serialized
 def reconcile():
     global _certificate_reload_pending
-    from app.services import wireguard, amnezia_runtime
+    from app.services import wireguard, amnezia_runtime, singbox_runtime, mtproto_runtime
     with SessionLocal() as db:
+        from app.services.user_lifecycle import reconcile as reconcile_users
+        reconcile_users(db)
         certificates_changed = certificate_changes(db)
         wireguard.reconcile(db)
         amnezia_runtime.reconcile(db)
         reconcile_inbounds(db)
     if not settings.xray_enabled:
+        singbox_runtime.stop()
+        mtproto_runtime.stop()
         return
     with SessionLocal() as db:
         if not xray.xray_status()['running']:
@@ -81,6 +85,8 @@ def reconcile():
                     logger.error('Xray could not restore its validated configuration.')
                 else:
                     _certificate_reload_pending = False
+                    singbox_runtime.reconcile(db)
+                    mtproto_runtime.reconcile(db)
             return
         xray.sync_stats(db)
         from app.services.monitoring import refresh_from_core
@@ -97,6 +103,9 @@ def reconcile():
                 logger.error("Xray reconciliation failed: %s", result["message"])
             else:
                 _certificate_reload_pending = False
+
+        singbox_runtime.reconcile(db)
+        mtproto_runtime.reconcile(db)
 
 
 async def run(stop: asyncio.Event):

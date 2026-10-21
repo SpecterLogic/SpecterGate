@@ -788,6 +788,8 @@ pre {
 .app-shell {
   min-height: 100vh;
 }
+.language-select { color: var(--text); background: #101b28; border: 1px solid var(--border); border-radius: 8px; padding: 7px; font: inherit; }
+.login-language { position: absolute; inset-inline-end: 20px; top: 20px; z-index: 10; }
 .sidebar {
   position: fixed;
   inset-block: 0;
@@ -3874,6 +3876,7 @@ pre {
 }
 
 @media (max-width: 900px) {
+  html[dir="ltr"] .sidebar:not(.mobile-open) { transform: translateX(-105%); }
   .sidebar {
     display: none;
     width: 266px;

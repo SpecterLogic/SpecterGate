@@ -131,6 +131,8 @@ def subscription(token: str, request: Request, format: str | None = None, db: Se
     group, user = _get_target(db, token)
     if format is None and "text/html" in request.headers.get("accept", "").lower():
         return RedirectResponse(f"{_base_url(request, db)}/s/{quote(token, safe='')}", status_code=302)
+    from app.services.devices import enforce
+    enforce(db, [member for member in group.members if member.status == "active"] if group else [user], request)
     target = group or user
     if target.status != "active" and format in {None, "base64", "raw"} and not any(client in request.headers.get("user-agent", "").lower() for client in ("clash", "sing-box", "singbox")):
         row = status_record(target)
@@ -269,6 +271,11 @@ def _export_response(users, links, inbounds, nodes, host, format, user_agent, he
 @router.get("/sub/{token}/info", response_model=SubscriptionInfo)
 def subscription_info(token: str, request: Request, db: Session = Depends(get_db)):
     group, user = _get_target(db, token)
+    protected = any(member.hwid_limit for member in group.members if member.status == "active") if group else bool(user.hwid_limit)
+    if protected and request.headers.get("x-hwid"):
+        from app.services.devices import enforce
+        enforce(db, [member for member in group.members if member.status == "active"] if group else [user], request)
+    hidden = protected and not request.headers.get("x-hwid")
     base = _base_url(request, db)
     formats = _format_urls(base, token)
     if user:
@@ -281,7 +288,7 @@ def subscription_info(token: str, request: Request, db: Session = Depends(get_db
         from app.models import AmneziaPeer
         if user.status == "active" and amnezia_runtime.server_status().get("ready") and amneziawg.get_amnezia_params(db).enabled and db.query(AmneziaPeer).filter_by(user_id=user.id, is_active=True).first():
             formats["amneziawg"] = f"{base}/sub/{token}?format=amneziawg"
-            formats["amnezia_vpn"] = f"{base}/sub/{token}?format=amnezia_vpn" 
+            formats["amnezia_vpn"] = f"{base}/sub/{token}?format=amnezia_vpn"
     tunnels = db.query(DnsTunnel).filter(DnsTunnel.is_active.is_(True)).all()
 
     if group:
@@ -289,8 +296,8 @@ def subscription_info(token: str, request: Request, db: Session = Depends(get_db
         data = _group_info(group, base, db)
         return SubscriptionInfo(
             **data,
-            links=links if group.status == "active" else [],
-            dns_links=dns_links if group.status == "active" else [],
+            links=links if group.status == "active" and not hidden else [],
+            dns_links=dns_links if group.status == "active" and not hidden else [],
         )
 
     assert user is not None
@@ -305,8 +312,8 @@ def subscription_info(token: str, request: Request, db: Session = Depends(get_db
         used_traffic_bytes=user.used_traffic_bytes,
         upload_bytes=user.upload_bytes,
         download_bytes=user.download_bytes,
-        links=links,
-        dns_links=dns_links,
+        links=[] if hidden else links,
+        dns_links=[] if hidden else dns_links,
         subscription_url=f"{base}/sub/{user.sub_token}",
         clash_url=f"{base}/sub/{user.sub_token}?format=clash",
         page_url=f"{base}/s/{user.sub_token}",

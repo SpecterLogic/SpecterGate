@@ -1,0 +1,26 @@
+services:
+  db:
+    image: timescale/timescaledb:2.31.0-pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: spectergate
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${SPECTERGATE_DB_ADMIN_PASSWORD:?Set a separate database administrator password}
+      SG_APP_PASSWORD: ${SPECTERGATE_DB_PASSWORD:?Set SPECTERGATE_DB_PASSWORD}
+    volumes:
+      - spectergate_timescale:/var/lib/postgresql/data
+      - ./deploy/timescale-init.sh:/docker-entrypoint-initdb.d/10-spectergate.sh:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "spectergate"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    security_opt: ["no-new-privileges:true"]
+  backend:
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SPECTERGATE_DATABASE_URL: postgresql+psycopg://spectergate:${SPECTERGATE_DB_PASSWORD}@db:5432/spectergate
+volumes:
+  spectergate_timescale:

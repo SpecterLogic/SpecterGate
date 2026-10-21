@@ -40,6 +40,8 @@ from app.routers import (
     monitoring,
     diagnostics,
     protocols,
+    cloudflare,
+    updates,
 )
 from app.seed import seed_database
 from app.services import maintenance, xray as xray_service
@@ -65,6 +67,12 @@ async def lifespan(app: FastAPI):
     from app.services.dnstt_runtime import DnsttRuntime
     app.state.dnstt_runtime = DnsttRuntime()
     dns_worker = asyncio.create_task(app.state.dnstt_runtime.run(stop))
+    from app.services.ssh_runtime import run as run_ssh
+    ssh_worker = asyncio.create_task(run_ssh(stop))
+    from app.services.notifications import run as run_notifications
+    notification_worker = asyncio.create_task(run_notifications(stop))
+    from app.services.cloudflare import run as run_cloudflare
+    cloudflare_worker = asyncio.create_task(run_cloudflare(stop))
     try:
         yield
     finally:
@@ -73,6 +81,13 @@ async def lifespan(app: FastAPI):
         await gateway_worker
         await telegram_worker
         await dns_worker
+        await ssh_worker
+        await notification_worker
+        await cloudflare_worker
+        from app.services.singbox_runtime import stop as stop_singbox
+        await asyncio.to_thread(stop_singbox)
+        from app.services.mtproto_runtime import stop as stop_mtg
+        await asyncio.to_thread(stop_mtg)
         await asyncio.to_thread(xray_service.stop_process)
 
 
@@ -154,6 +169,8 @@ def create_app() -> FastAPI:
         monitoring.router,
         diagnostics.router,
         protocols.router,
+        cloudflare.router,
+        updates.router,
     ):
         app.include_router(router, prefix=settings.api_prefix)
 

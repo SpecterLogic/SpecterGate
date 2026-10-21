@@ -1,10 +1,10 @@
-export const permissionLabels: Record<string, string> = {
-  "dashboard.read": "مشاهده داشبورد", "users.read": "مشاهده کاربران", "users.write": "ساخت و ویرایش کاربران", "users.delete": "حذف کاربران",
-  "subscriptions.read": "مشاهده گروه‌ها", "subscriptions.write": "مدیریت گروه‌ها", "plans.read": "مشاهده پلن‌ها", "plans.manage": "مدیریت پلن‌ها",
-  "admins.read": "مشاهده مدیران", "admins.manage": "مدیریت مدیران و مجوزها", "credits.manage": "مدیریت اعتبار",
-  "nodes.read": "مشاهده نودها", "nodes.manage": "مدیریت نودها", "inbounds.read": "مشاهده ورودی‌ها", "inbounds.manage": "مدیریت ورودی‌ها",
-  "dns.read": "مشاهده تونل‌های DNS", "dns.manage": "مدیریت تونل‌های DNS", "xray.manage": "مدیریت هسته",
-  "settings.read": "مشاهده تنظیمات", "settings.manage": "مدیریت تنظیمات", "audit.read": "مشاهده گزارش عملیات",
-  "security.read": "مشاهده وضعیت Fail2ban", "security.manage": "مدیریت Fail2ban و IPهای مسدود",
-  "routing.read": "مشاهده خروجی‌ها و مسیریابی", "routing.manage": "مدیریت خروجی‌ها و مسیریابی",
+import { t } from "./i18n";export const permissionLabels: Record<string, string> = {
+  "dashboard.read": t("مشاهده داشبورد"), "users.read": t("مشاهده کاربران"), "users.write": t("ساخت و ویرایش کاربران"), "users.delete": t("حذف کاربران"),
+  "subscriptions.read": t("مشاهده گروه‌ها"), "subscriptions.write": t("مدیریت گروه‌ها"), "plans.read": t("مشاهده پلن‌ها"), "plans.manage": t("مدیریت پلن‌ها"),
+  "admins.read": t("مشاهده مدیران"), "admins.manage": t("مدیریت مدیران و مجوزها"), "credits.manage": t("مدیریت اعتبار"),
+  "nodes.read": t("مشاهده نودها"), "nodes.manage": t("مدیریت نودها"), "inbounds.read": t("مشاهده ورودی‌ها"), "inbounds.manage": t("مدیریت ورودی‌ها"),
+  "dns.read": t("مشاهده تونل‌های DNS"), "dns.manage": t("مدیریت تونل‌های DNS"), "xray.manage": t("مدیریت هسته"),
+  "settings.read": t("مشاهده تنظیمات"), "settings.manage": t("مدیریت تنظیمات"), "audit.read": t("مشاهده گزارش عملیات"),
+  "security.read": t("مشاهده وضعیت Fail2ban"), "security.manage": t("مدیریت Fail2ban و IPهای مسدود"),
+  "routing.read": t("مشاهده خروجی‌ها و مسیریابی"), "routing.manage": t("مدیریت خروجی‌ها و مسیریابی")
 };

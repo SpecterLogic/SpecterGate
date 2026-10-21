@@ -288,7 +288,7 @@ def redact_config(config):
     def walk(item):
         if isinstance(item, dict):
             for key, value in item.items():
-                if key in {"secretKey", "privateKey", "password", "pass"}:
+                if key in {"secretKey", "privateKey", "private_key", "password", "pass", "decryption", "echServerKeys", "mldsa65Seed"}:
                     item[key] = "[redacted]"
                 else:
                     walk(value)

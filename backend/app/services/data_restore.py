@@ -20,7 +20,7 @@ from app.models import Admin, ProtectedSetting, Setting
 from app.services import vault
 from app.services.backup_crypto import decrypt_archive
 
-TABLES = ("plans", "nodes", "inbounds", "dns_tunnels", "subscription_groups", "vpn_users", "tunnel_gateway_settings", "user_resource_access", "group_resource_access", "wireguard_peers", "amnezia_peers")
+TABLES = ("plans", "nodes", "inbounds", "dns_tunnels", "subscription_groups", "vpn_users", "tunnel_gateway_settings", "user_resource_access", "group_resource_access", "wireguard_peers", "amnezia_peers", "user_devices")
 MAX_UPLOAD = 16 * 1024 * 1024
 
 
@@ -33,7 +33,7 @@ def export_data(connection):
     for name in TABLES:
         tables[name] = [dict(row) for row in connection.execute(select(Base.metadata.tables[name])).mappings()]
     tables["settings"] = [dict(row) for row in connection.execute(select(Setting.__table__)).mappings() if portable_setting(row["key"])]
-    tables["protected_settings"] = [dict(row) for row in connection.execute(select(ProtectedSetting.__table__)).mappings() if row["key"].startswith(("warp_private_", "wireguard_peer_", "proxy_password_", "amnezia_peer_"))]
+    tables["protected_settings"] = [dict(row) for row in connection.execute(select(ProtectedSetting.__table__)).mappings() if row["key"].startswith(("warp_private_", "wireguard_peer_", "proxy_password_", "amnezia_peer_", "ssh_host_key"))]
     names = {str(row.id): row.username for row in connection.execute(select(Admin.id, Admin.username))}
     return json.dumps({"format": "spectergate-data", "version": 1, "admins": names, "tables": tables}, default=lambda value: value.isoformat() if isinstance(value, datetime) else str(value), ensure_ascii=False).encode()
 
@@ -50,7 +50,7 @@ def _legacy_sqlite(payload):
             for name in (*TABLES, "settings", "protected_settings"):
                 rows = [dict(row) for row in connection.execute(f'SELECT * FROM "{name}" LIMIT 100001')] if name in actual else []
                 if name == "settings": rows = [r for r in rows if portable_setting(r["key"])]
-                if name == "protected_settings": rows = [r for r in rows if r["key"].startswith(("warp_private_", "wireguard_peer_", "proxy_password_", "amnezia_peer_"))]
+                if name == "protected_settings": rows = [r for r in rows if r["key"].startswith(("warp_private_", "wireguard_peer_", "proxy_password_", "amnezia_peer_", "ssh_host_key"))]
                 tables[name] = rows
             names = {str(row["id"]): row["username"] for row in connection.execute("SELECT id,username FROM admins")} if "admins" in actual else {}
             return {"format": "spectergate-data", "version": 1, "admins": names, "tables": tables}
@@ -76,6 +76,7 @@ def inspect(payload: bytes, password: str):
         data = json.loads(files["data.json"]) if "data.json" in files else _legacy_sqlite(files["database.sqlite3"])
         if data.get("format") != "spectergate-data" or data.get("version") != 1: raise ValueError("Unsupported backup version")
         tables = data["tables"]
+        tables.setdefault("user_devices", [])
         tables.setdefault("amnezia_peers", [])  # Older version-1 snapshots.
         if set(tables) - set((*TABLES, "settings", "protected_settings")): raise ValueError("Unexpected table")
         for name in TABLES:
@@ -99,7 +100,7 @@ def inspect(payload: bytes, password: str):
         secrets = {}
         for row in tables.get("protected_settings", []):
             name = row["key"]
-            if not name.startswith(("warp_private_", "wireguard_peer_", "proxy_password_", "amnezia_peer_")): raise ValueError("Unsupported secret")
+            if not name.startswith(("warp_private_", "wireguard_peer_", "proxy_password_", "amnezia_peer_", "ssh_host_key")): raise ValueError("Unsupported secret")
             key = files.get("secrets.key", b"")
             raw = base64.b64decode(row["ciphertext"], validate=True)
             secrets[name] = AESGCM(key).decrypt(raw[:12], raw[12:], name.encode()).decode()
@@ -129,7 +130,7 @@ def restore(db, data, secrets, owner_id):
     db.rollback()
     try:
         # Delete dependent historical samples first. Totals are part of the user snapshot.
-        for name in ("traffic_samples", "node_usage_receipts", *reversed(TABLES)):
+        for name in ("notification_events", "traffic_samples", "node_usage_receipts", *reversed(TABLES)):
             db.execute(Base.metadata.tables[name].delete())
         for name in TABLES:
             table = Base.metadata.tables[name]
@@ -144,7 +145,7 @@ def restore(db, data, secrets, owner_id):
                 db.execute(table.insert().values(**row))
         db.execute(Setting.__table__.delete().where(Setting.key.startswith("routing_") | Setting.key.startswith("dns_config_") | (Setting.key == "amneziawg_params")))
         for row in data["tables"].get("settings", []): db.execute(Setting.__table__.insert().values(**row))
-        db.execute(ProtectedSetting.__table__.delete().where(ProtectedSetting.key.startswith("warp_private_") | ProtectedSetting.key.startswith("wireguard_peer_") | ProtectedSetting.key.startswith("proxy_password_") | ProtectedSetting.key.startswith("amnezia_peer_")))
+        db.execute(ProtectedSetting.__table__.delete().where(ProtectedSetting.key.startswith("warp_private_") | ProtectedSetting.key.startswith("wireguard_peer_") | ProtectedSetting.key.startswith("proxy_password_") | (ProtectedSetting.key.startswith("amnezia_peer_") | (ProtectedSetting.key == "ssh_host_key"))))
         db.expire_all()
         for name, value in secrets.items(): vault.put_secret(db, name, value)
         db.flush()
