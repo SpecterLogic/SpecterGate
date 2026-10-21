@@ -29,7 +29,7 @@ def export_data(connection):
     for name in TABLES:
         tables[name] = [dict(row) for row in connection.execute(select(Base.metadata.tables[name])).mappings()]
     tables["settings"] = [dict(row) for row in connection.execute(select(Setting.__table__)).mappings() if row["key"].startswith("routing_")]
-    tables["protected_settings"] = [dict(row) for row in connection.execute(select(ProtectedSetting.__table__)).mappings() if row["key"].startswith(("warp_private_", "wireguard_peer_"))]
+    tables["protected_settings"] = [dict(row) for row in connection.execute(select(ProtectedSetting.__table__)).mappings() if row["key"].startswith(("warp_private_", "wireguard_peer_", "proxy_password_"))]
     names = {str(row.id): row.username for row in connection.execute(select(Admin.id, Admin.username))}
     return json.dumps({"format": "spectergate-data", "version": 1, "admins": names, "tables": tables}, default=lambda value: value.isoformat() if isinstance(value, datetime) else str(value), ensure_ascii=False).encode()
 
@@ -46,7 +46,7 @@ def _legacy_sqlite(payload):
             for name in (*TABLES, "settings", "protected_settings"):
                 rows = [dict(row) for row in connection.execute(f'SELECT * FROM "{name}" LIMIT 100001')] if name in actual else []
                 if name == "settings": rows = [r for r in rows if r["key"].startswith("routing_")]
-                if name == "protected_settings": rows = [r for r in rows if r["key"].startswith(("warp_private_", "wireguard_peer_"))]
+                if name == "protected_settings": rows = [r for r in rows if r["key"].startswith(("warp_private_", "wireguard_peer_", "proxy_password_"))]
                 tables[name] = rows
             names = {str(row["id"]): row["username"] for row in connection.execute("SELECT id,username FROM admins")} if "admins" in actual else {}
             return {"format": "spectergate-data", "version": 1, "admins": names, "tables": tables}
@@ -94,7 +94,7 @@ def inspect(payload: bytes, password: str):
         secrets = {}
         for row in tables.get("protected_settings", []):
             name = row["key"]
-            if not name.startswith(("warp_private_", "wireguard_peer_")): raise ValueError("Unsupported secret")
+            if not name.startswith(("warp_private_", "wireguard_peer_", "proxy_password_")): raise ValueError("Unsupported secret")
             key = files.get("secrets.key", b"")
             raw = base64.b64decode(row["ciphertext"], validate=True)
             secrets[name] = AESGCM(key).decrypt(raw[:12], raw[12:], name.encode()).decode()
@@ -136,7 +136,7 @@ def restore(db, data, secrets, owner_id):
                 db.execute(table.insert().values(**row))
         db.execute(Setting.__table__.delete().where(Setting.key.startswith("routing_")))
         for row in data["tables"].get("settings", []): db.execute(Setting.__table__.insert().values(**row))
-        db.execute(ProtectedSetting.__table__.delete().where(ProtectedSetting.key.startswith("warp_private_") | ProtectedSetting.key.startswith("wireguard_peer_")))
+        db.execute(ProtectedSetting.__table__.delete().where(ProtectedSetting.key.startswith("warp_private_") | ProtectedSetting.key.startswith("wireguard_peer_") | ProtectedSetting.key.startswith("proxy_password_")))
         db.expire_all()
         for name, value in secrets.items(): vault.put_secret(db, name, value)
         db.flush()

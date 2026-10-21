@@ -5,6 +5,7 @@ import {
   Activity,
   Boxes,
   ChevronLeft,
+  ChevronDown,
   CircleUserRound,
   LayoutDashboard,
   LogOut,
@@ -12,6 +13,7 @@ import {
   RadioTower,
   Server,
   Settings,
+  ShieldCheck,
   Users,
   X,
   Zap,
@@ -22,25 +24,36 @@ import { cn } from "../lib/format";
 import type { XrayStatus } from "../lib/types";
 
 const NAV_ITEMS = [
-  { to: "/", label: "داشبورد", icon: LayoutDashboard, end: true },
-  { to: "/users", label: "کاربران", icon: Users },
-  { to: "/backups", label: "بکاپ و بازیابی", icon: Boxes },
-  { to: "/routing", label: "مسیریابی Direct / WARP / IPv4", icon: RadioTower },
-  { to: "/admins", label: "ادمین‌ها و نمایندگان", icon: CircleUserRound },
-  { to: "/plans", label: "پلن‌های فروش", icon: Boxes },
-  { to: "/subscriptions", label: "اشتراک‌های گروهی", icon: Users },
-  { to: "/inbounds", label: "اینباندها", icon: Boxes },
-  { to: "/dns-tunnels", label: "تونل‌های DNS", icon: RadioTower },
-  { to: "/nodes", label: "نودها", icon: Server },
-  { to: "/settings", label: "تنظیمات", icon: Settings },
-  { to: "/integrations", label: "ربات و بکاپ", icon: Settings },
+  { to: "/", label: "داشبورد", icon: LayoutDashboard, end: true, group: "نمای کلی" },
+  { to: "/users", label: "کاربران", icon: Users, group: "کاربران و اشتراک‌ها" },
+  { to: "/subscriptions", label: "اشتراک‌های گروهی", icon: Users, group: "کاربران و اشتراک‌ها" },
+  { to: "/plans", label: "پلن‌ها", icon: Boxes, group: "کاربران و اشتراک‌ها" },
+  { to: "/inbounds", label: "ورودی‌ها (Inbounds)", icon: Boxes, group: "شبکه" },
+  { to: "/outbounds", label: "خروجی‌ها (Outbounds)", icon: Server, group: "شبکه" },
+  { to: "/routing", label: "قوانین مسیریابی", icon: RadioTower, group: "شبکه" },
+  { to: "/dns-tunnels", label: "تونل‌های DNS", icon: RadioTower, group: "شبکه" },
+  { to: "/nodes", label: "نودها", icon: Server, group: "شبکه" },
+  { to: "/core", label: "هستهٔ Xray", icon: Activity, group: "شبکه" },
+  { to: "/admins", label: "مدیران و مجوزها", icon: CircleUserRound, group: "مدیریت پنل" },
+  { to: "/security", label: "امنیت و Fail2ban", icon: ShieldCheck, group: "مدیریت پنل" },
+  { to: "/backups", label: "بکاپ و بازیابی", icon: Boxes, group: "مدیریت پنل" },
+  { to: "/integrations", label: "ربات تلگرام", icon: Settings, group: "مدیریت پنل" },
+  { to: "/settings", label: "تنظیمات عمومی", icon: Settings, group: "مدیریت پنل" },
+  { to: "/activity", label: "گزارش فعالیت", icon: Activity, group: "مدیریت پنل" },
+  { to: "/account", label: "حساب من", icon: CircleUserRound, group: "مدیریت پنل" },
 ];
 
 const TITLES: Record<string, string> = {
   "/": "داشبورد",
   "/users": "مدیریت کاربران",
   "/backups": "بکاپ و بازیابی",
-  "/routing": "مسیریابی Direct / WARP / IPv4",
+  "/routing": "قوانین مسیریابی",
+  "/outbounds": "خروجی‌ها",
+  "/outbounds/warp": "حساب WARP",
+  "/security": "امنیت و Fail2ban",
+  "/core": "هستهٔ Xray",
+  "/activity": "گزارش فعالیت",
+  "/account": "حساب من",
   "/admins": "ادمین‌ها و نمایندگان",
   "/plans": "پلن‌های فروش",
   "/subscriptions": "اشتراک‌های گروهی",
@@ -74,9 +87,12 @@ export default function Layout() {
   const { admin, logout } = useAuth();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [openGroup, setOpenGroup] = useState("");
 
   useEffect(() => {
     setMobileOpen(false);
+    const active = NAV_ITEMS.find(item => item.to === location.pathname || (item.to !== "/" && location.pathname.startsWith(item.to + "/")));
+    setOpenGroup(active?.group || "");
   }, [location.pathname]);
 
   const xray = useQuery({
@@ -89,6 +105,12 @@ export default function Layout() {
 
   const isHealthy = Boolean(xray.data?.running);
   const title = TITLES[location.pathname] ?? "SpecterGate";
+  const visibleItems = NAV_ITEMS.filter(item => {
+    if (item.to === "/account") return true;
+    if (["/integrations", "/backups"].includes(item.to)) return !!admin?.is_owner;
+    const permissions: Record<string, string> = { "/": "dashboard.read", "/users": "users.read", "/admins": "admins.read", "/plans": "plans.read", "/subscriptions": "subscriptions.read", "/inbounds": "inbounds.read", "/outbounds": "routing.read", "/routing": "routing.read", "/security": "security.read", "/nodes": "nodes.read", "/dns-tunnels": "dns.read", "/settings": "settings.read", "/core": "xray.manage", "/activity": "audit.read" };
+    return admin?.permissions.includes(permissions[item.to]);
+  });
 
   return (
     <div className="app-shell">
@@ -116,13 +138,12 @@ export default function Layout() {
           <ChevronLeft size={15} className="muted-icon" />
         </div>
 
-        <nav className="nav">
-          <span className="nav-caption">مدیریت</span>
-          {NAV_ITEMS.filter(item => {
-            if (["/integrations", "/routing", "/backups"].includes(item.to)) return !!admin?.is_owner;
-            const permission: Record<string, string> = { "/": "dashboard.read", "/users": "users.read", "/admins": "admins.read", "/plans": "plans.read", "/subscriptions": "subscriptions.read", "/inbounds": "inbounds.read", "/nodes": "nodes.read", "/dns-tunnels": "dns.read", "/settings": "settings.read" };
-            return admin?.permissions.includes(permission[item.to]);
-          }).map((item) => {
+        <nav className="nav" aria-label="بخش‌های پنل">
+          {["نمای کلی", "کاربران و اشتراک‌ها", "شبکه", "مدیریت پنل"].map(group => {
+            const items = visibleItems.filter(item => item.group === group);
+            return items.length ? <div className="nav-group" key={group}>
+              {group === "نمای کلی" ? <span className="nav-caption">{group}</span> : <button className="nav-caption nav-group-toggle" type="button" aria-expanded={openGroup === group} onClick={() => setOpenGroup(openGroup === group ? "" : group)}><span>{group}</span><ChevronDown size={14} className={openGroup === group ? "expanded" : ""} /></button>}
+              {(group === "نمای کلی" || openGroup === group) && items.map((item) => {
             const Icon = item.icon;
             return (
               <NavLink
@@ -136,7 +157,7 @@ export default function Layout() {
                 <i className="nav-indicator" />
               </NavLink>
             );
-          })}
+          })}</div> : null; })}
         </nav>
 
         <div className="sidebar-spacer" />

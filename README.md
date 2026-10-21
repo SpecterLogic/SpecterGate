@@ -15,7 +15,8 @@ SpecterGate combines a React interface with a FastAPI backend and Xray-core. It 
 - Administrator hierarchy, scoped permissions, plans and quotas.
 - Local Xray management and a pull-based remote node agent.
 - DNSTT and NoizDNS profile generation, DNS multiplexing and an optional authenticated local SOCKS gateway with per-user accounting.
-- Node-specific Direct/WARP/Block routing with encrypted WireGuard credentials.
+- Node-specific Direct/IPv4/Block/WARP routing and SOCKS5/HTTP proxy outbounds with encrypted credentials.
+- Fail2ban SSH status, ban/unban and protection settings through a restricted local bridge, with independent administrator permissions.
 - Installation-specific Telegram bot: administrator user creation, subscription QR delivery and owner-only encrypted backups.
 - SQLite or PostgreSQL, a quick server installer, Docker Compose, Nginx and systemd deployment.
 

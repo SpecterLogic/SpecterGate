@@ -49,6 +49,12 @@ const TABS: { key: TabKey; label: string; icon: typeof Settings2; hint: string }
 ];
 
 const ACTION_LABELS: Record<string, string> = {
+  fail2ban_ban: "مسدودکردن IP در Fail2ban",
+  fail2ban_unban: "رفع مسدودیت IP",
+  fail2ban_configure: "تغییر سیاست امنیت",
+  update_outbounds: "تغییر خروجی‌ها",
+  update_routing: "تغییر قوانین مسیریابی",
+  restore_data: "بازیابی بکاپ",
   login: "ورود",
   change_password: "تغییر رمز",
   create_user: "ایجاد کاربر",
@@ -71,11 +77,12 @@ const ACTION_LABELS: Record<string, string> = {
   update_settings: "تنظیمات",
 };
 
-export default function SettingsPage() {
+export default function SettingsPage({ section }: { section?: TabKey }) {
   const { admin, logout } = useAuth();
   const toast = useToast();
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<TabKey>("general");
+  const [tab, setTab] = useState<TabKey>(section || "general");
+  useEffect(() => setTab(section || "general"), [section]);
   const [form, setForm] = useState<PanelSettings | null>(null);
   const [password, setPassword] = useState({ current: "", next: "", confirm: "" });
   const [passwordError, setPasswordError] = useState("");
@@ -86,6 +93,7 @@ export default function SettingsPage() {
   const settings = useQuery({
     queryKey: ["panel-settings"],
     queryFn: () => api.get<PanelSettings>("/api/settings"),
+    enabled: !!admin?.permissions.includes("settings.read") && !section,
   });
 
   useEffect(() => {
@@ -96,6 +104,7 @@ export default function SettingsPage() {
     queryKey: ["xray-status"],
     queryFn: () => api.get<XrayStatus>("/api/xray/status"),
     refetchInterval: 30_000,
+    enabled: !!admin?.permissions.includes("xray.manage") && tab === "xray",
   });
 
   const preview = useQuery({
@@ -108,7 +117,7 @@ export default function SettingsPage() {
   const audit = useQuery({
     queryKey: ["audit-logs"],
     queryFn: () => api.get<AuditLog[]>("/api/audit-logs?limit=60"),
-    enabled: tab === "audit",
+    enabled: tab === "audit" && !!admin?.permissions.includes("audit.read"),
   });
 
   const saveMutation = useMutation({
@@ -215,14 +224,14 @@ export default function SettingsPage() {
       <div className="page-intro">
         <div>
           <p className="eyebrow">پیکربندی فضای کاری</p>
-          <h2>تنظیمات پنل</h2>
-          <p className="page-subtitle">برند، دامنهٔ اشتراک، هستهٔ Xray و امنیت حساب را مدیریت کنید.</p>
+          <h2>{section ? TABS.find(item => item.key === section)?.label : "تنظیمات عمومی پنل"}</h2>
+          <p className="page-subtitle">{section ? TABS.find(item => item.key === section)?.hint : "برند، پیام‌ها، دامنهٔ اشتراک و پیش‌فرض ساخت کاربران."}</p>
         </div>
         <div className="admin-chip">
           <span className="avatar">{admin?.username?.slice(0, 2).toUpperCase()}</span>
           <div>
             <strong>{admin?.username}</strong>
-            <span>مدیر کل · آخرین ورود {formatDateTime(admin?.last_login_at ?? null)}</span>
+            <span>{admin?.is_owner ? "مالک پنل" : "مدیر"} · آخرین ورود {formatDateTime(admin?.last_login_at ?? null)}</span>
           </div>
         </div>
       </div>
@@ -230,7 +239,7 @@ export default function SettingsPage() {
       <div className="settings-layout">
         <Card className="settings-nav-card">
           <div className="settings-nav">
-            {TABS.map((item) => {
+            {TABS.filter(item => section ? item.key === section : ["general", "subscription"].includes(item.key)).map((item) => {
               const Icon = item.icon;
               return (
                 <button

@@ -1,3 +1,4 @@
+import { permissionLabels } from "../lib/permissions";
 import { useState, type FormEvent } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
@@ -104,7 +105,7 @@ export default function Commerce({ mode }: { mode: Mode }) {
           {!ownerEditing && <>{select("role", "نقش", roles)}{select("scope", "محدوده کاربران", { own: "خود و زیرمجموعه", all: "همه", none: "هیچ" })}{field("parent_id", "شناسه ادمین بالادستی", "number", { min: 1 })}{field("max_users", "سقف تعداد کاربر (خالی = نامحدود)", "number", { min: 0 })}{field("traffic_gb", "سهمیه مصرف نماینده (GiB؛ خالی = نامحدود)", "number", { min: 0, step: "any" })}{select("require_template", "ساخت کاربر فقط با پلن", { false: "خیر", true: "بله" })}
           <fieldset className="commerce-permissions"><legend>مجوزهای سفارشی (بدون انتخاب = مجوزهای پیش‌فرض نقش)</legend>{permissions.data?.map(p => {
             const checked = editor?.values.permissions === undefined ? (editor?.item as Admin | undefined)?.permissions.includes(p) ?? false : editor.values.permissions.split(",").includes(p);
-            return <label key={p}><input type="checkbox" checked={checked} onChange={e => setEditor(current => { if (!current) return current; const values = new Set(current.values.permissions === undefined ? (current.item as Admin | undefined)?.permissions ?? [] : current.values.permissions.split(",").filter(Boolean)); if (e.target.checked) values.add(p); else values.delete(p); return { ...current, values: { ...current.values, permissions: [...values].join(",") } }; })} />{p}</label>;
+            return <label key={p}><input type="checkbox" checked={checked} onChange={e => setEditor(current => { if (!current) return current; const values = new Set(current.values.permissions === undefined ? (current.item as Admin | undefined)?.permissions ?? [] : current.values.permissions.split(",").filter(Boolean)); if (e.target.checked) { values.add(p); if (["security.manage", "routing.manage"].includes(p)) values.add(p.replace(".manage", ".read")); } else { values.delete(p); if (["security.read", "routing.read"].includes(p)) values.delete(p.replace(".read", ".manage")); } return { ...current, values: { ...current.values, permissions: [...values].join(",") } }; })} />{permissionLabels[p] || p}</label>;
           })}</fieldset></>}
         </> : <>
           {field("name", "نام", "text", { required: true })}{field("traffic_gb", "حجم (GiB؛ خالی = نامحدود)", "number", { min: 0, step: "any" })}

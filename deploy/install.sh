@@ -218,6 +218,7 @@ nginx -t
 systemctl reload nginx
 
 echo "SpecterGate is installed."
+bash "$APP_DIR/deploy/fail2ban_install.sh"
 if [[ "$INSTALL_DNSTT" == true ]]; then
   bash "$APP_DIR/deploy/dnstt_install.sh"
 fi

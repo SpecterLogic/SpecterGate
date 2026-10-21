@@ -1,0 +1,24 @@
+[Unit]
+Description=SpecterGate Fail2ban control bridge
+After=fail2ban.service
+Requires=fail2ban.service
+
+[Service]
+Type=simple
+User=root
+Group=spectergate
+RuntimeDirectory=spectergate-security
+RuntimeDirectoryMode=0750
+ExecStart=/usr/bin/python3 /usr/local/lib/spectergate-security-bridge.py
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/run/spectergate-security /etc/fail2ban/jail.d
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

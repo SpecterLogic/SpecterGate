@@ -4242,3 +4242,19 @@ pre {
 .action-menu-portal { position: fixed; inset-inline-end: auto; z-index: 1100; max-height: 250px; overflow-y: auto; }
 .subscription-share { display: flex; flex-direction: column; gap: 18px; align-items: stretch; }
 .subscription-share .qr-frame { align-self: center; background: white; padding: 12px; }
+
+.nav-group { display: flex; flex-direction: column; gap: 3px; flex-shrink: 0; margin-bottom: 15px; }
+.nav-group .nav-caption { padding-top: 3px; padding-bottom: 5px; }
+.outbound-catalog { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 18px 0; }
+.outbound-tile { padding: 18px; }
+.outbound-tile p { color: var(--muted); font-size: 12px; margin: 8px 0 14px; }
+.security-stats { display: flex; gap: 28px; flex-wrap: wrap; margin: 20px 0; }
+.security-stats div { display: flex; flex-direction: column; gap: 6px; }
+.security-stats strong { font-size: 26px; }
+.security-stats small { color: var(--muted); }
+.settings-fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+
+.nav-group-toggle { display: flex; align-items: center; justify-content: space-between; width: 100%; border: 0; background: transparent; text-align: start; cursor: pointer; min-height: 34px; }
+.nav-group-toggle:hover { color: var(--text); }
+.nav-group-toggle svg { transition: transform 0.15s; }
+.nav-group-toggle svg.expanded { transform: rotate(180deg); }

@@ -22,7 +22,7 @@ def key32(value):
 
 
 class RoutingRule(BaseModel):
-    outbound: Literal["direct", "warp", "blocked", "ipv4"]
+    outbound: str = Field(pattern=r"^(?:direct|warp|blocked|ipv4|proxy-[a-zA-Z0-9_-]{1,40})$")
     domains: list[str] = Field(default_factory=list, max_length=200)
     ips: list[str] = Field(default_factory=list, max_length=200)
     inbound_ids: list[int] = Field(default_factory=list, max_length=200)
@@ -64,8 +64,31 @@ class RoutingRule(BaseModel):
         return self
 
 
+class ProxyOutbound(BaseModel):
+    tag: str = Field(pattern=r"^proxy-[a-zA-Z0-9_-]{1,40}$")
+    name: str = Field(min_length=1, max_length=80)
+    protocol: Literal["socks", "http"] = "socks"
+    address: str = Field(min_length=1, max_length=253)
+    port: int = Field(ge=1, le=65535)
+    username: str = Field(default="", max_length=128)
+
+    @field_validator("address")
+    @classmethod
+    def address_format(cls, value):
+        try: return str(ipaddress.ip_address(value))
+        except ValueError:
+            if not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?", value):
+                raise ValueError("Enter an IP or hostname without a scheme or port.")
+            return value
+
+
+class ProxyOutboundUpdate(ProxyOutbound):
+    password: SecretStr | None = None
+
+
 class RoutingConfig(BaseModel):
-    default_outbound: Literal["direct", "warp", "blocked", "ipv4"] = "direct"
+    default_outbound: str = Field(default="direct", pattern=r"^(?:direct|warp|blocked|ipv4|proxy-[a-zA-Z0-9_-]{1,40})$")
+    outbounds: list[ProxyOutbound] = Field(default_factory=list, max_length=20)
     domain_strategy: Literal['AsIs', 'IPIfNonMatch', 'IPOnDemand'] = 'AsIs'
     block_bittorrent: bool = False
     block_ips: list[str] = Field(default_factory=list, max_length=200)
@@ -117,6 +140,11 @@ class RoutingConfig(BaseModel):
 
     @model_validator(mode="after")
     def enabled_routes(self):
+        tags = [item.tag for item in self.outbounds]
+        if len(tags) != len(set(tags)): raise ValueError("Outbound tags must be unique.")
+        available = {"direct", "ipv4", "blocked", "warp", *tags}
+        if self.default_outbound not in available or any(rule.outbound not in available for rule in self.rules):
+            raise ValueError("The selected outbound does not exist; update its routing rules first.")
         if self.warp_enabled and not self.warp_public_key:
             raise ValueError("A peer public key is required for WARP.")
         if not self.warp_enabled and (self.default_outbound == "warp" or any(r.outbound == "warp" for r in self.rules)):
@@ -133,6 +161,10 @@ def profile_keys(node_id=None):
     return "routing_" + suffix, "warp_private_" + suffix
 
 
+def outbound_secret(tag, node_id=None):
+    return f"proxy_password_{node_id if node_id is not None else 'local'}_{tag}"
+
+
 def verify_node(db, node_id):
     node = db.get(Node, node_id) if node_id is not None else None
     if node_id is not None and (node is None or node.is_local):
@@ -144,6 +176,7 @@ def read_config(db, node_id=None):
     key, secret = profile_keys(node_id)
     stored = get_setting(db, key, None)
     values = RoutingConfig.model_validate(stored or {}).model_dump()
+    values["outbounds"] = [{**item, "password_configured": has_secret(db, outbound_secret(item["tag"], node_id))} for item in values["outbounds"]]
     return {**values, "private_key_configured": has_secret(db, secret), "node_id": node_id}
 
 
@@ -167,6 +200,9 @@ def write_config(db, payload: RoutingUpdate, node_id=None):
             actual = node.id if node and not node.is_local else None
             if inbound is None or actual != node_id:
                 raise HTTPException(status_code=400, detail="اینباند قانون باید متعلق به نود همین پروفایل باشد.")
+    for item in payload.outbounds:
+        if item.username and not has_secret(db, outbound_secret(item.tag, node_id)):
+            raise HTTPException(status_code=400, detail="برای خروجی دارای نام کاربری، رمز را در بخش خروجی‌ها وارد کنید.")
     set_setting(db, key, values)
 
 
@@ -176,6 +212,13 @@ def apply_to_xray(db, config, node=None):
     policy = RoutingConfig.model_validate(get_setting(db, key, None) or {})
     config['routing']['domainStrategy'] = policy.domain_strategy
     config['outbounds'].append({'tag': 'ipv4', 'protocol': 'freedom', 'settings': {'domainStrategy': 'ForceIPv4'}})
+    for item in policy.outbounds:
+        server = {"address": item.address, "port": item.port}
+        if item.username:
+            password = get_secret(db, outbound_secret(item.tag, node_id))
+            if password is None: raise RuntimeError("Proxy outbound credential unavailable.")
+            server["users"] = [{"user": item.username, "pass": password}]
+        config["outbounds"].append({"tag": item.tag, "protocol": item.protocol, "settings": {"servers": [server]}})
     if policy.warp_enabled:
         private = get_secret(db, secret)
         if private is None:
@@ -185,7 +228,7 @@ def apply_to_xray(db, config, node=None):
         if policy.default_outbound == "warp":
             config["outbounds"].remove(warp)
             config["outbounds"].insert(0, warp)
-    if policy.default_outbound in {'ipv4', 'blocked'}:
+    if policy.default_outbound in {'ipv4', 'blocked'} or policy.default_outbound.startswith("proxy-"):
         outbound = next(o for o in config['outbounds'] if o.get('tag') == policy.default_outbound)
         config['outbounds'].remove(outbound)
         config['outbounds'].insert(0, outbound)
@@ -221,7 +264,7 @@ def redact_config(config):
     def walk(item):
         if isinstance(item, dict):
             for key, value in item.items():
-                if key in {"secretKey", "privateKey", "password"}:
+                if key in {"secretKey", "privateKey", "password", "pass"}:
                     item[key] = "[redacted]"
                 else:
                     walk(value)

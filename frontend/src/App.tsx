@@ -17,6 +17,8 @@ const UsersPage = lazy(() => import("./pages/Users"));
 const Commerce = lazy(() => import("./pages/Commerce"));
 const Integrations = lazy(() => import("./pages/Integrations"));
 const Backups = lazy(() => import("./pages/Backups"));
+const SecurityPage = lazy(() => import("./pages/Security"));
+const Outbounds = lazy(() => import("./pages/Outbounds"));
 const RoutingPage = lazy(() => import("./pages/Routing"));
 
 function PermissionRoute({ permission, children }: { permission: string; children: React.ReactNode }) {
@@ -78,7 +80,13 @@ export default function App() {
               <Route path="/admins" element={<PermissionRoute permission="admins.read"><Commerce key="admins" mode="admins" /></PermissionRoute>} />
               <Route path="/integrations" element={<PermissionRoute permission="settings.manage"><Integrations /></PermissionRoute>} />
               <Route path="/backups" element={<PermissionRoute permission="settings.manage"><Backups /></PermissionRoute>} />
-              <Route path="/routing" element={<PermissionRoute permission="settings.manage"><RoutingPage /></PermissionRoute>} />
+              <Route path="/routing" element={<PermissionRoute permission="routing.read"><RoutingPage /></PermissionRoute>} />
+              <Route path="/outbounds" element={<PermissionRoute permission="routing.read"><Outbounds /></PermissionRoute>} />
+              <Route path="/outbounds/warp" element={<PermissionRoute permission="routing.read"><RoutingPage key="warp" mode="warp" /></PermissionRoute>} />
+              <Route path="/security" element={<PermissionRoute permission="security.read"><SecurityPage /></PermissionRoute>} />
+              <Route path="/core" element={<PermissionRoute permission="xray.manage"><SettingsPage key="core" section="xray" /></PermissionRoute>} />
+              <Route path="/activity" element={<PermissionRoute permission="audit.read"><SettingsPage key="activity" section="audit" /></PermissionRoute>} />
+              <Route path="/account" element={<SettingsPage key="account" section="security" />} />
               <Route path="/plans" element={<PermissionRoute permission="plans.read"><Commerce key="plans" mode="plans" /></PermissionRoute>} />
               <Route path="/subscriptions" element={<PermissionRoute permission="subscriptions.read"><Commerce key="subscriptions" mode="subscriptions" /></PermissionRoute>} />
               <Route path="/inbounds" element={<InboundsPage />} />

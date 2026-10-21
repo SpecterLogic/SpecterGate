@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
@@ -26,18 +27,11 @@ export default function Integrations() {
     const body = { enabled: form.enabled, backup_enabled: form.backup_enabled, backup_hours: Number(form.backup_hours), ...(form.owner_id ? { owner_id: Number(form.owner_id) } : {}), ...(form.bot_token ? { bot_token: form.bot_token } : {}), ...(form.backup_password ? { backup_password: form.backup_password } : {}) };
     action.mutate(() => api.put("/api/integrations/telegram", body));
   }
-  async function download() {
-    const blob = await api.download("/api/integrations/backups/download");
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url; anchor.download = `SpecterGate-${new Date().toISOString().slice(0, 10)}.sgbackup`; anchor.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
   if (!admin?.is_owner) return <p>این بخش فقط در دسترس مالک پنل است.</p>;
   if (config.isLoading) return <Spinner />;
   if (config.error) return <p role="alert">{config.error.message}</p>;
   return <div className="commerce-page">
-    <SectionHeader title="ربات مدیریت و بکاپ" subtitle="ربات اختصاصی همین نصب؛ تنظیمات فقط در دسترس مالک پنل است." />
+    <SectionHeader title="ربات تلگرام" subtitle="تنظیم ربات، ساخت کاربر از تلگرام و ارسال بکاپ خودکار به مالک." action={<Link className="text-link" to="/backups">بکاپ و بازیابی از فایل ←</Link>} />
     <Card className="integration-card"><SectionHeader title="اتصال ربات تلگرام" />
       <form onSubmit={save} className="commerce-form">
         <Field label="توکن ربات" hint={config.data?.token_configured ? "توکن ذخیره شده است؛ برای حفظ آن خالی بگذارید." : "ربات خودتان را با BotFather بسازید و توکن را اینجا وارد کنید."}><Input type="password" autoComplete="new-password" value={form.bot_token} onChange={e => setForm({ ...form, bot_token: e.target.value })} /></Field>
@@ -50,8 +44,8 @@ export default function Integrations() {
       </form>
       <p className="field-hint">مالک و مدیران مجاز باید ابتدا گفت‌وگوی خصوصی ربات را باز کنند و /start بزنند. توکن در مرورگر بازیابی نمی‌شود و در دیتابیس رمزگذاری‌شده نگهداری می‌شود.</p>
     </Card>
-    <Card className="integration-card"><SectionHeader title="بکاپ مالک" subtitle={config.data?.last_backup_at ? `آخرین ارسال موفق: ${new Date(config.data.last_backup_at).toLocaleString("fa-IR")}` : "هنوز بکاپی ارسال نشده است."} />
-      <div className="commerce-actions"><Button disabled={!config.data?.backup_password_configured || action.isPending} onClick={() => action.mutate(download)}>دانلود بکاپ رمزگذاری‌شده</Button><Button variant="outline" disabled={!config.data?.token_configured || !config.data?.backup_password_configured || action.isPending} onClick={() => action.mutate(() => api.post("/api/integrations/backups/send"))}>ارسال بکاپ برای مالک</Button><Button variant="danger" disabled={action.isPending} onClick={() => setRemoving(true)}>قطع اتصال ربات</Button></div>
+    <Card className="integration-card"><SectionHeader title="ارسال بکاپ با ربات" subtitle={config.data?.last_backup_at ? `آخرین ارسال موفق: ${new Date(config.data.last_backup_at).toLocaleString("fa-IR")}` : "هنوز بکاپی ارسال نشده است."} />
+      <div className="commerce-actions"><Button variant="outline" disabled={!config.data?.token_configured || !config.data?.backup_password_configured || action.isPending} onClick={() => action.mutate(() => api.post("/api/integrations/backups/send"))}>ارسال بکاپ برای مالک</Button><Button variant="danger" disabled={action.isPending} onClick={() => setRemoving(true)}>قطع اتصال ربات</Button></div>
     </Card>
     <Card className="integration-card"><SectionHeader title="دسترسی مدیران در ربات" subtitle="حساب تلگرام هر مدیر را به حساب پنل او متصل کنید؛ نقش، سهمیه و محدوده دسترسی پنل همچنان اعمال می‌شوند." />
       <form className="commerce-form" onSubmit={e => { e.preventDefault(); action.mutate(() => api.put("/api/integrations/telegram/admins", { telegram_user_id: Number(binding.telegram_user_id), admin_id: Number(binding.admin_id), allow_create: binding.allow_create })); }}>

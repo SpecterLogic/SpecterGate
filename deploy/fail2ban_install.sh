@@ -21,4 +21,12 @@ EOF
 fail2ban-client -t
 systemctl enable --now fail2ban
 systemctl restart fail2ban
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if id spectergate >/dev/null 2>&1; then
+  install -m 755 "$REPO_DIR/deploy/security_bridge.py" /usr/local/lib/spectergate-security-bridge.py
+  install -m 644 "$REPO_DIR/deploy/spectergate-security.service" /etc/systemd/system/spectergate-security.service
+  systemctl daemon-reload
+  systemctl enable --now spectergate-security
+  systemctl restart spectergate-security
+fi
 echo 'Fail2ban SSH protection enabled: 5 failures in 10 minutes, ban for 1 hour.'

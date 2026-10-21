@@ -12,6 +12,10 @@ from app.models import Admin, AdminRole, CreditTransaction, Plan, VPNUser
 
 
 ALL_PERMISSIONS = [
+    "security.read",
+    "security.manage",
+    "routing.read",
+    "routing.manage",
     "dashboard.read",
     "users.read",
     "users.write",
@@ -38,6 +42,8 @@ ALL_PERMISSIONS = [
 DEFAULT_PERMISSIONS: dict[AdminRole, list[str]] = {
     AdminRole.superadmin: ALL_PERMISSIONS,
     AdminRole.admin: [
+        "security.read",
+        "routing.read",
         "dashboard.read",
         "users.read",
         "users.write",
@@ -77,7 +83,11 @@ def permissions_for(admin: Admin) -> list[str]:
         try:
             custom = json.loads(admin.permissions_json)
             if isinstance(custom, list):
-                return [str(item) for item in custom if str(item) in ALL_PERMISSIONS]
+                granted = [str(item) for item in custom if str(item) in ALL_PERMISSIONS]
+                for area in ("security", "routing"):
+                    if f"{area}.manage" in granted and f"{area}.read" not in granted:
+                        granted.append(f"{area}.read")
+                return granted
         except (json.JSONDecodeError, TypeError):
             pass
     return list(DEFAULT_PERMISSIONS.get(admin.role, []))

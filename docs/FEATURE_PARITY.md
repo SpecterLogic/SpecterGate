@@ -40,7 +40,7 @@ This checklist tracks functional coverage against the requested 3x-ui, PasarGuar
 | ECH keys/configuration, certificate generation and rotation, OCSP controls | Not implemented |
 | ML-DSA-65 Reality key management | Not implemented |
 | Inline certificate/key management and extra certificate chains | Not implemented |
-| Full outbound catalog, chains, pools and subscription balancers | Direct, Block, IPv4 and WARP only |
+| Outbound chains, pools and subscription balancers | Not implemented; Direct, Block, IPv4, WARP, SOCKS5 and HTTP proxy outbounds are available |
 | Routing tester backed by core diagnostics | Not implemented |
 | Dedicated hosts/DNS editor | Not implemented |
 | Inbound aggregate quotas, expiry, scheduled traffic reset and bulk operations | Not implemented; user/group quotas are available |

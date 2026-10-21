@@ -56,7 +56,7 @@ def _subscription_slug(db: Session, value: str | None, user_id: int | None = Non
 @router.get("/access-options")
 def access_options(db: Session = Depends(get_db), admin: Admin = Depends(get_current_admin)):
     from app.services.permissions import has_permission
-    if not any(has_permission(admin, p) for p in ("users.read", "subscriptions.read")):
+    if not any(has_permission(admin, p) for p in ("users.read", "subscriptions.read", "routing.read")):
         raise HTTPException(status_code=403, detail="مجوز مشاهده منابع را ندارید.")
     from app.models import Inbound, DnsTunnel
     return {
